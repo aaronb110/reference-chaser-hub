@@ -1,0 +1,31 @@
+/* -----------------------------------------
+   Refevo Theme (Base Brand Tokens)
+   ----------------------------------------- */
+:root {
+  --brand-navy: #0A192F;
+  --brand-blue: #0057FF;
+  --brand-teal: #00D6B6;
+  --brand-light: #F9FAFB;
+  --brand-slate: #1E293B;
+  --brand-border: #E5E7EB;
+  --brand-radius: 12px;
+  --brand-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+/* Typography defaults */
+body {
+  font-family: Inter, system-ui, sans-serif;
+  color: var(--brand-slate);
+  background-color: var(--brand-light);
+}
+
+/* Generic utility helpers */
+.text-gradient {
+  background: linear-gradient(to right, var(--brand-blue), var(--brand-teal));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.shadow-brand {
+  box-shadow: 0 4px 20px rgba(0, 87, 255, 0.15);
+}

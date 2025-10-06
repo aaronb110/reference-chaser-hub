@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import Navbar from "@/components/Navbar";
+import "./styles/theme.css";
+import "./styles/components.css";
+
 
 export const metadata: Metadata = {
   title: "Reference Chaser Hub",

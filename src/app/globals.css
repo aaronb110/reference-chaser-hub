@@ -24,3 +24,51 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Global Refevo Product UI */
+:root {
+  --brand-navy: #0A192F;
+  --brand-blue: #0057FF;
+  --brand-teal: #00D6B6;
+  --brand-light: #F9FAFB;
+  --brand-slate: #1E293B;
+  --brand-border: #E5E7EB;
+}
+
+/* Standard card container */
+.refevo-card {
+  background: #fff;
+  border: 1px solid var(--brand-border);
+  border-radius: 1rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  padding: 1.5rem;
+}
+
+/* Input and form consistency */
+.refevo-input {
+  border: 1px solid var(--brand-border);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  color: var(--brand-slate);
+  background: #fff;
+}
+
+.refevo-input:focus {
+  border-color: var(--brand-blue);
+  box-shadow: 0 0 0 2px rgba(0, 87, 255, 0.2);
+  outline: none;
+}
+
+/* Button styles */
+.refevo-btn {
+  background: linear-gradient(to right, var(--brand-blue), var(--brand-teal));
+  color: white;
+  font-weight: 600;
+  border-radius: 0.75rem;
+  padding: 0.6rem 1rem;
+  transition: 0.2s ease-in-out;
+}
+
+.refevo-btn:hover {
+  filter: brightness(1.1);
+}

@@ -6,7 +6,19 @@ module.exports = {
     "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
   ],
   theme: {
-    extend: {},
+    extend: {
+      colors: {
+        brand: {
+        navy: "#0A192F",        // Primary background & sidebar
+        blue: "#0057FF",        // Accent and links
+        teal: "#00D6B6",        // Highlights and success states
+        light: "#F9FAFB",       // Page background
+        slate: "#1E293B",       // Text and icons
+        border: "#E5E7EB",      // Borders and separators
+      },
+    },
   },
+},
+  
   plugins: [],
-};
+}

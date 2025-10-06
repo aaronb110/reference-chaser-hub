@@ -1,0 +1,56 @@
+/* -----------------------------------------
+   Refevo Components (Reusable UI Patterns)
+   ----------------------------------------- */
+
+/* Cards */
+.refevo-card {
+  background: #fff;
+  border: 1px solid var(--brand-border);
+  border-radius: var(--brand-radius);
+  box-shadow: var(--brand-shadow);
+  padding: 1.25rem;
+  transition: box-shadow 0.2s ease;
+}
+
+.refevo-card:hover {
+  box-shadow: 0 4px 16px rgba(0, 87, 255, 0.08);
+}
+
+/* Inputs */
+.refevo-input {
+  border: 1px solid var(--brand-border);
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.95rem;
+  background: white;
+  color: var(--brand-slate);
+  width: 100%;
+}
+
+.refevo-input:focus {
+  border-color: var(--brand-blue);
+  box-shadow: 0 0 0 3px rgba(0, 87, 255, 0.15);
+  outline: none;
+}
+
+/* Buttons */
+.refevo-btn {
+  background: linear-gradient(to right, var(--brand-blue), var(--brand-teal));
+  color: white;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  padding: 0.65rem 1.25rem;
+  cursor: pointer;
+  transition: 0.2s ease-in-out;
+}
+
+.refevo-btn:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
+.refevo-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
