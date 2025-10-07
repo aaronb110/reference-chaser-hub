@@ -1,5 +1,5 @@
 import { Resend } from "resend";
-import { getWelcomeEmailHtml } from "../emails/welcomeEmail";
+import { getWelcomeEmailHtml } from "../emails/WelcomeEmail";
 
 // ✅ Make sure your .env.local has RESEND_API_KEY set
 const resend = new Resend(process.env.RESEND_API_KEY!);
