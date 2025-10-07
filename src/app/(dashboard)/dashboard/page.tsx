@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import toast from "react-hot-toast";
 import type { Candidate, Referee, Request } from "@/types/models";
-import DashboardLayout from "@/components/layout/DashboardLayout"; // ✅ import layout
 
 export default function DashboardPage() {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -149,7 +148,6 @@ export default function DashboardPage() {
 
   // ✅ Wrapped in DashboardLayout below
   return (
-    <DashboardLayout>
       <div className="min-h-screen bg-gray-50 p-8">
         <div className="max-w-7xl mx-auto space-y-8">
           {/* Header */}
@@ -320,6 +318,5 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
-    </DashboardLayout>
   );
 }

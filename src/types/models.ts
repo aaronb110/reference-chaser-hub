@@ -1,29 +1,22 @@
-export interface Candidate {
+export type Candidate = {
   id: string;
   full_name: string;
   email: string;
-  created_at: string;
-  created_by?: string | null;
-  company_id?: string | null;
-}
+  created_at?: string;
+};
 
-export interface Referee {
+export type Referee = {
   id: string;
   full_name: string;
   email: string;
-  phone: string | null;
-  created_by?: string | null;
-  company_id?: string | null;
-}
+  created_at?: string;
+};
 
-export interface Request {
+export type Request = {
   id: string;
   candidate_id: string;
   referee_id: string;
   status: string;
-  created_at: string;
   resend_count?: number;
-  last_resent_at?: string | null;
-  created_by?: string | null;
-  company_id?: string | null;
-}
+  created_at: string;
+};
