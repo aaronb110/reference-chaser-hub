@@ -1,25 +1,16 @@
-import type { Metadata } from "next";
 import "./globals.css";
-import Navbar from "@/components/Navbar";
-import "./styles/theme.css";
-import "./styles/components.css";
-
+import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Reference Chaser Hub",
-  description: "Automated reference request system",
+  title: "Refevo – Reference Hub",
+  description: "Making reference checks effortless.",
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="bg-gray-50 text-gray-900">
-        <Navbar />
-        <main className="max-w-7xl mx-auto px-6 py-6">{children}</main>
+      <body className="bg-gray-50 text-gray-900 antialiased">
+        {children}
       </body>
     </html>
   );
