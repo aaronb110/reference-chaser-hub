@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 export default function OptOutInvalidPage() {
   return (
     <main className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-6">
@@ -13,14 +15,17 @@ export default function OptOutInvalidPage() {
             stroke="currentColor"
             strokeWidth={1.8}
           >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M6 18L18 6M6 6l12 12"
+            />
           </svg>
         </div>
 
         <h1 className="text-2xl font-semibold mb-3">Link expired or invalid</h1>
         <p className="text-slate-300 mb-6">
-          This unsubscribe link is no longer valid.  
-          Please{" "}
+          This unsubscribe link is no longer valid. Please{" "}
           <a
             href="mailto:hello@refevo.com?subject=Manual%20Unsubscribe%20Request"
             className="text-teal-400 hover:text-teal-300 underline"
@@ -30,12 +35,12 @@ export default function OptOutInvalidPage() {
           if you still wish to opt out.
         </p>
 
-        <a
+        <Link
           href="/"
-          className="inline-block rounded-lg bg-teal-500 text-white font-medium px-5 py-2 hover:bg-teal-400 transition-all"
+          className="inline-block text-white bg-teal-600 hover:bg-teal-700 px-4 py-2 rounded-md transition"
         >
-          Return to Refevo
-        </a>
+          Return to homepage
+        </Link>
 
         <p className="text-xs text-slate-500 mt-4">
           © {new Date().getFullYear()} Refevo • All rights reserved
