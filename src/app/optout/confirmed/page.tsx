@@ -33,7 +33,7 @@ export default function OptOutConfirmedPage() {
 
         <h1 className="text-2xl font-semibold mb-3">You're unsubscribed</h1>
         <p className="text-slate-300 mb-6">
-          You’ve been successfully removed from further Refevo beta updates.{" "}
+          You&apos;ve been successfully removed from further Refevo beta updates.{" "}
           If this was a mistake, please{" "}
           <a
             href="mailto:hello@refevo.com?subject=Re-subscribe%20to%20Refevo%20Updates"
@@ -41,7 +41,7 @@ export default function OptOutConfirmedPage() {
           >
             email us
           </a>{" "}
-          and we’ll re-add you.
+          and we&apos;ll re-add you.
         </p>
 
         <div className="mb-6">
