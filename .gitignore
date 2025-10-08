@@ -1,35 +1,70 @@
-# Node / Next.js
-node_modules/
-.next/
-out/
-dist/
-build/
-.vercel/
-*.log
-npm-debug.log*
-yarn-debug.log*
-pnpm-debug.log*
+# ==========================
+# Core Node / Next.js
+# ==========================
+node_modules
+.next
+out
+dist
+build
 
-# Env files (keep secrets out of GitHub)
+# ==========================
+# Environment & Secrets
+# ==========================
 .env
 .env.local
-.env.*.local
-.env.production.local
 .env.development.local
 .env.test.local
-.env*
+.env.production.local
 
-# OS / Editor
+# Supabase service keys / backups
+supabase/.temp
+supabase/.env
+supabase/.output
+supabase/backups/
+
+# ==========================
+# Logs & Diagnostics
+# ==========================
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# ==========================
+# OS / Editor junk
+# ==========================
 .DS_Store
 Thumbs.db
+.idea/
 .vscode/*
 !.vscode/settings.json
 !.vscode/extensions.json
-.idea/
 
-# Tests / coverage
-coverage/
+# ==========================
+# Build / cache artifacts
+# ==========================
+.cache
+coverage
+*.tsbuildinfo
 
-# Supabase (commit migrations, ignore temp stuff)
-supabase/.temp/
-supabase/.branches/
+# ==========================
+# Design / misc exports
+# ==========================
+*.zip
+*.tar
+*.gz
+*.rar
+*.tmp
+*.bak
+
+# ==========================
+# Generated or temporary data
+# ==========================
+*.local.json
+*.swp
+*.swo
+*.lock-wscript
+__pycache__/
+
+.vercel
