@@ -4,13 +4,15 @@ export type Candidate = {
   email: string;
   mobile: string;
   created_at?: string;
-  
 };
 
 export type Referee = {
   id: string;
+  candidate_id: string;           // ✅ added — links referee to candidate
   full_name: string;
   email: string;
+  mobile?: string | null;
+  relationship?: string | null;
   created_at?: string;
 };
 
@@ -20,5 +22,7 @@ export type Request = {
   referee_id: string;
   status: string;
   resend_count?: number;
+  resend_count_14d?: number | null;
+  resend_window_start?: string | null;
   created_at: string;
 };
