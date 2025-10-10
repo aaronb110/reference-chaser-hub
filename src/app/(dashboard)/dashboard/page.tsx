@@ -42,6 +42,8 @@ export default function DashboardPage() {
     mobile: "",
   });
   const [isSending, setIsSending] = useState(false);
+  const [sending, setSending] = useState(false);
+
 
 
   // ── Load auth + profile ─────────────────────────────────────────────────────
@@ -301,15 +303,35 @@ const sendTestEmail = async () => {
           <div className="flex gap-2">
 {role !== "user" && (
   <button
-    onClick={sendTestEmail}
-    disabled={isSending}
+    onClick={async () => {
+      if (sending) return;
+      setSending(true);
+      toast.loading("📨 Sending test email...");
+
+      try {
+        const { error } = await supabase.rpc("send_candidate_consent_email", {
+          email_override: userEmail,
+        });
+
+        if (error) throw error;
+        toast.dismiss();
+        toast.success(`📧 Test email sent to ${userEmail}`);
+      } catch (err: any) {
+        toast.dismiss();
+        toast.error(err.message || "Failed to send test email");
+      } finally {
+        // lock button for 10 seconds
+        setTimeout(() => setSending(false), 3000);
+      }
+    }}
+    disabled={sending}
     className={`px-4 py-2 rounded-lg font-medium shadow transition ${
-      isSending
+      sending
         ? "bg-gray-400 text-white cursor-not-allowed"
         : "bg-green-600 text-white hover:bg-green-700"
     }`}
   >
-    {isSending ? "📤 Sending..." : "📧 Test Email"}
+    {sending ? "Sending..." : "📧 Test Email"}
   </button>
 )}
 
