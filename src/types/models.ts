@@ -2,7 +2,9 @@ export type Candidate = {
   id: string;
   full_name: string;
   email: string;
+  mobile: string;
   created_at?: string;
+  
 };
 
 export type Referee = {

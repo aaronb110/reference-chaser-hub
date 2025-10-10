@@ -12,11 +12,14 @@ export default function DashboardPage() {
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("any");
   const [sortBy, setSortBy] = useState("created_desc");
-  const [selectedRequest, setSelectedRequest] = useState<Request | null>(null);
   const [expandedCandidates, setExpandedCandidates] = useState<Set<string>>(new Set());
 
-  // temp role override (until auth ready)
-  const [role] = useState<string>("admin");
+  const [showModal, setShowModal] = useState(false);
+  const [newCandidate, setNewCandidate] = useState({
+    full_name: "",
+    email: "",
+    mobile: "",
+  });
 
   // 📊 Counts for Insights
   const pendingCount = requests.filter((r) => r.status === "pending").length;
@@ -30,13 +33,20 @@ export default function DashboardPage() {
   // Load data
   useEffect(() => {
     const fetchData = async () => {
-      const { data: candidatesData } = await supabase.from("candidates").select("*");
-      const { data: refereesData } = await supabase.from("referees").select("*");
-      const { data: requestsData } = await supabase.from("reference_requests").select("*");
+      const { data: candidatesData, error: candErr } = await supabase
+        .from("candidates")
+        .select("*");
+      if (!candErr && candidatesData) setCandidates(candidatesData);
 
-      if (candidatesData) setCandidates(candidatesData);
-      if (refereesData) setReferees(refereesData);
-      if (requestsData) setRequests(requestsData);
+      const { data: refereesData, error: refErr } = await supabase
+        .from("referees")
+        .select("*");
+      if (!refErr && refereesData) setReferees(refereesData);
+
+      const { data: requestsData, error: reqErr } = await supabase
+        .from("reference_requests")
+        .select("*");
+      if (!reqErr && requestsData) setRequests(requestsData);
     };
     fetchData();
   }, []);
@@ -44,7 +54,7 @@ export default function DashboardPage() {
   const getCandidate = (id: string) => candidates.find((c) => c.id === id);
   const getReferee = (id: string) => referees.find((r) => r.id === id);
 
-  // Filtering
+  // Filter + Sort
   let filteredRequests = requests.filter((r) => {
     const candidate = getCandidate(r.candidate_id);
     const matchSearch =
@@ -55,7 +65,6 @@ export default function DashboardPage() {
     return matchSearch && matchStatus;
   });
 
-  // Sorting
   filteredRequests = [...filteredRequests].sort((a, b) => {
     if (sortBy === "created_desc")
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
@@ -72,251 +81,262 @@ export default function DashboardPage() {
     return 0;
   });
 
-  // 🔹 Actions
-  const toggleCompleted = async (req: Request) => {
-    const newStatus = req.status === "completed" ? "pending" : "completed";
-    const { data, error } = await supabase
-      .from("reference_requests")
-      .update({ status: newStatus })
-      .eq("id", req.id)
-      .select();
+  // 🔹 Add Candidate
+  const handleAddCandidate = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
 
-    if (!error && data) {
-      setRequests((prev) =>
-        prev.map((r) => (r.id === req.id ? { ...r, status: newStatus } : r))
-      );
-      toast.success(newStatus === "completed" ? "Marked Completed ✅" : "Set back to Pending 🔄");
-    } else {
-      toast.error("Error updating request");
+    const { full_name, email, mobile } = newCandidate;
+
+    // Validation
+    if (!full_name.trim() || !email.trim() || !mobile.trim()) {
+      toast.error("Please fill in all fields.");
+      return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      toast.error("Enter a valid email address.");
+      return;
+    }
+
+    if (!/^07\d{9}$/.test(mobile)) {
+      toast.error("Enter a valid UK mobile number starting with 07.");
+      return;
+    }
+
+    const formattedMobile = "+44" + mobile.substring(1);
+
+    try {
+      console.log("🧠 Starting candidate insert...");
+
+      const { data: userData, error: userErr } = await supabase.auth.getUser();
+      console.log("🔍 Supabase user:", userData, userErr);
+
+      if (userErr) {
+        toast.error("Auth error: " + userErr.message);
+        return;
+      }
+
+      const user = userData?.user;
+      if (!user) {
+        toast.error("No authenticated user found.");
+        return;
+      }
+
+      console.log("📨 Inserting candidate:", {
+        full_name,
+        email,
+        mobile: formattedMobile,
+        created_by: user.id,
+      });
+
+      const { data: insertData, error: insertErr } = await supabase
+        .from("candidates")
+        .insert({
+          full_name: full_name.trim(),
+          email: email.trim().toLowerCase(),
+          mobile: formattedMobile,
+          created_by: user.id,
+        })
+        .select(); // show what was inserted
+
+      console.log("✅ Insert response:", insertData, insertErr);
+
+      if (insertErr) throw insertErr;
+
+      toast.success("Candidate added successfully!");
+      setTimeout(() => setShowModal(false), 3000);
+
+      // refresh candidates
+      const { data: candidatesData } = await supabase.from("candidates").select("*");
+      if (candidatesData) setCandidates(candidatesData);
+
+      setNewCandidate({ full_name: "", email: "", mobile: "" });
+    } catch (err: any) {
+      console.error("❌ Add candidate error:", err);
+      toast.error(err.message || "Error adding candidate");
     }
   };
 
-  const toggleArchived = async (req: Request) => {
-    const newStatus = req.status === "archived" ? "pending" : "archived";
-    const { data, error } = await supabase
-      .from("reference_requests")
-      .update({ status: newStatus })
-      .eq("id", req.id)
-      .select();
-
-    if (!error && data) {
-      setRequests((prev) =>
-        prev.map((r) => (r.id === req.id ? { ...r, status: newStatus } : r))
-      );
-      toast.success(newStatus === "archived" ? "Archived 🗂️" : "Unarchived 🔄");
-    } else {
-      toast.error("Error updating request");
-    }
-  };
-
-  const resendRequest = async (req: Request) => {
-    const { data, error } = await supabase
-      .from("reference_requests")
-      .update({ resend_count: (req.resend_count || 0) + 1 })
-      .eq("id", req.id)
-      .select();
-
-    if (!error && data) {
-      setRequests((prev) =>
-        prev.map((r) =>
-          r.id === req.id ? { ...r, resend_count: (r.resend_count || 0) + 1 } : r
-        )
-      );
-      toast.success("Request resent ✉️");
-    } else {
-      toast.error("Error resending request");
-    }
-  };
-
-  // Status Badge
+  // 🔹 Status Badge
   const renderStatusBadge = (status: string) => {
-    const baseClasses =
+    const base =
       "inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium";
     switch (status) {
       case "completed":
-        return <span className={`${baseClasses} bg-green-100 text-green-800`}>✅ Completed</span>;
+        return <span className={`${base} bg-green-100 text-green-800`}>✅ Completed</span>;
       case "pending":
-        return <span className={`${baseClasses} bg-blue-100 text-blue-800`}>⏳ Pending</span>;
+        return <span className={`${base} bg-blue-100 text-blue-800`}>⏳ Pending</span>;
       case "archived":
-        return <span className={`${baseClasses} bg-gray-200 text-gray-700`}>📂 Archived</span>;
+        return <span className={`${base} bg-gray-200 text-gray-700`}>📂 Archived</span>;
       case "declined":
-        return <span className={`${baseClasses} bg-red-100 text-red-800`}>❌ Declined</span>;
+        return <span className={`${base} bg-red-100 text-red-800`}>❌ Declined</span>;
       default:
-        return <span className={`${baseClasses} bg-gray-100 text-gray-600`}>{status}</span>;
+        return <span className={`${base} bg-gray-100 text-gray-600`}>{status}</span>;
     }
   };
 
-  // ✅ Wrapped in DashboardLayout below
+  // ✅ Page
   return (
-      <div className="min-h-screen bg-gray-50 p-8">
-        <div className="max-w-7xl mx-auto space-y-8">
-          {/* Header */}
-          <div className="flex justify-between items-center">
-            <h1 className="text-2xl font-bold text-gray-900">Reference Dashboard</h1>
-            <button
-              onClick={() => (window.location.href = "/new-request")}
-              className="px-4 py-2 rounded-lg bg-blue-600 text-white font-medium shadow hover:bg-blue-700 transition"
-            >
-              + New Request
-            </button>
+    <div className="min-h-screen bg-gray-50 p-8">
+      <div className="max-w-7xl mx-auto space-y-8">
+        {/* Header */}
+        <div className="flex justify-between items-center">
+          <h1 className="text-2xl font-bold text-gray-900">Reference Dashboard</h1>
+
+          <button
+            onClick={() => setShowModal(true)}
+            className="px-4 py-2 rounded-lg bg-blue-600 text-white font-medium shadow hover:bg-blue-700 transition"
+          >
+            + Add Candidate
+          </button>
+        </div>
+
+        {/* Insights */}
+        <div className="bg-white shadow rounded-xl p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <h2 className="text-lg font-semibold text-blue-700 flex items-center gap-2">
+              💡 Key Insights
+            </h2>
+            <ul className="list-disc list-inside text-gray-700 mt-2 space-y-1">
+              <li>{pendingCount} requests pending</li>
+              <li>{overdueCount > 0 ? `${overdueCount} overdue 🚨` : "No overdue 🎉"}</li>
+              <li>{completedCount} requests completed</li>
+            </ul>
           </div>
-
-          {/* Insights */}
-          <div className="bg-white shadow rounded-xl p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <h2 className="text-lg font-semibold text-blue-700 flex items-center gap-2">
-                💡 Key Insights
-              </h2>
-              <ul className="list-disc list-inside text-gray-700 mt-2 space-y-1">
-                <li>{pendingCount} requests pending</li>
-                <li>{overdueCount > 0 ? `${overdueCount} overdue 🚨` : "No overdue 🎉"}</li>
-                <li>{completedCount} requests completed</li>
-              </ul>
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-green-700 flex items-center gap-2">
-                ✅ Recommendations
-              </h2>
-              <ul className="list-disc list-inside text-gray-700 mt-2 space-y-1">
-                {overdueCount > 0 && <li>Chase {overdueCount} overdue requests</li>}
-                {pendingCount > 0 && <li>Review {pendingCount} pending requests</li>}
-                {completedCount > 0 && <li>Archive completed requests to reduce clutter</li>}
-                {overdueCount === 0 && pendingCount === 0 && completedCount === 0 && (
-                  <li>Everything looks in control 🎉</li>
-                )}
-              </ul>
-            </div>
-          </div>
-
-          {/* Filters */}
-          <div className="bg-white rounded-xl shadow p-6 flex items-center space-x-4">
-            <input
-              type="text"
-              placeholder="Search by candidate"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="border rounded-lg px-3 py-2 w-1/3"
-            />
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="border rounded-lg px-3 py-2"
-            >
-              <option value="any">All</option>
-              <option value="pending">Pending</option>
-              <option value="completed">Completed</option>
-              <option value="declined">Declined</option>
-              <option value="archived">Archived</option>
-            </select>
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              className="border rounded-lg px-3 py-2"
-            >
-              <option value="created_desc">Newest</option>
-              <option value="created_asc">Oldest</option>
-              <option value="name_asc">Name A–Z</option>
-              <option value="name_desc">Name Z–A</option>
-            </select>
-          </div>
-
-          {/* Accordion Table */}
-          <div className="bg-white rounded-xl shadow overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-100">
-                <tr>
-                  <th className="py-3 px-4">Candidate</th>
-                  <th className="py-3 px-4">Email</th>
-                  <th className="py-3 px-4">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {candidates.map((candidate) => {
-                  const candidateRequests = filteredRequests.filter(
-                    (r) => r.candidate_id === candidate.id
-                  );
-                  if (candidateRequests.length === 0) return null;
-                  const expanded = expandedCandidates.has(candidate.id);
-
-                  return (
-                    <tr key={candidate.id}>
-                      <td
-                        colSpan={3}
-                        className="border-b bg-gray-50 cursor-pointer hover:bg-gray-100"
-                        onClick={() => {
-                          const newSet = new Set(expandedCandidates);
-                          expanded ? newSet.delete(candidate.id) : newSet.add(candidate.id);
-                          setExpandedCandidates(newSet);
-                        }}
-                      >
-                        <div className="flex items-center gap-2 p-4 font-medium">
-                          <span>{expanded ? "▼" : "▸"}</span>
-                          <span>{candidate.full_name}</span>
-                          <span className="text-sm text-gray-500 ml-auto">
-                            {candidateRequests.length} referees
-                          </span>
-                        </div>
-
-                        {expanded && (
-                          <div className="bg-white border-t">
-                            <table className="w-full text-xs">
-                              <thead className="bg-gray-100">
-                                <tr>
-                                  <th className="py-2 px-4 w-1/6">Referee</th>
-                                  <th className="py-2 px-4 w-1/6">Status</th>
-                                  <th className="py-2 px-4 w-1/6">Created</th>
-                                  <th className="py-2 px-4 w-1/6">Resends</th>
-                                  <th className="py-2 px-4">Actions</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {candidateRequests.map((req) => {
-                                  const referee = getReferee(req.referee_id);
-                                  return (
-                                    <tr key={req.id} className="border-b hover:bg-gray-50">
-                                      <td className="p-3 w-1/6">{referee?.full_name || "—"}</td>
-                                      <td className="p-3 w-1/6">{renderStatusBadge(req.status)}</td>
-                                      <td className="p-3 w-1/6">
-                                        {new Date(req.created_at).toLocaleString()}
-                                      </td>
-                                      <td className="p-3 w-1/6 text-gray-600 text-xs">
-                                        Sent {req.resend_count || 0} times
-                                      </td>
-                                      <td className="p-3 flex flex-wrap gap-2">
-                                        <button
-                                          onClick={() => resendRequest(req)}
-                                          className="px-2 py-1 bg-yellow-50 text-yellow-700 rounded hover:bg-yellow-100"
-                                        >
-                                          Resend
-                                        </button>
-                                        <button
-                                          onClick={() => toggleCompleted(req)}
-                                          className="px-2 py-1 bg-green-50 text-green-700 rounded hover:bg-green-100"
-                                        >
-                                          {req.status === "completed" ? "Undo" : "Complete"}
-                                        </button>
-                                        <button
-                                          onClick={() => toggleArchived(req)}
-                                          className="px-2 py-1 bg-red-50 text-red-700 rounded hover:bg-red-100"
-                                        >
-                                          {req.status === "archived" ? "Unarchive" : "Archive"}
-                                        </button>
-                                      </td>
-                                    </tr>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div>
+            <h2 className="text-lg font-semibold text-green-700 flex items-center gap-2">
+              ✅ Recommendations
+            </h2>
+            <ul className="list-disc list-inside text-gray-700 mt-2 space-y-1">
+              {overdueCount > 0 && <li>Chase {overdueCount} overdue requests</li>}
+              {pendingCount > 0 && <li>Review {pendingCount} pending requests</li>}
+              {completedCount > 0 && <li>Archive completed requests to reduce clutter</li>}
+              {overdueCount === 0 && pendingCount === 0 && completedCount === 0 && (
+                <li>Everything looks in control 🎉</li>
+              )}
+            </ul>
           </div>
         </div>
+
+        {/* Filters */}
+        <div className="bg-white rounded-xl shadow p-6 flex items-center space-x-4">
+          <input
+            type="text"
+            placeholder="Search by candidate"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="border rounded-lg px-3 py-2 w-1/3"
+          />
+          <select
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="border rounded-lg px-3 py-2"
+          >
+            <option value="any">All</option>
+            <option value="pending">Pending</option>
+            <option value="completed">Completed</option>
+            <option value="declined">Declined</option>
+            <option value="archived">Archived</option>
+          </select>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="border rounded-lg px-3 py-2"
+          >
+            <option value="created_desc">Newest</option>
+            <option value="created_asc">Oldest</option>
+            <option value="name_asc">Name A–Z</option>
+            <option value="name_desc">Name Z–A</option>
+          </select>
+        </div>
+
+        {/* Candidate List */}
+        <div className="bg-white rounded-xl shadow overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-100">
+              <tr>
+                <th className="py-3 px-4">Candidate</th>
+                <th className="py-3 px-4">Email</th>
+                <th className="py-3 px-4">Mobile</th>
+              </tr>
+            </thead>
+            <tbody>
+              {candidates.map((candidate) => (
+                <tr key={candidate.id} className="border-b hover:bg-gray-50">
+                  <td className="p-3">{candidate.full_name}</td>
+                  <td className="p-3">{candidate.email}</td>
+                  <td className="p-3 text-gray-500 text-sm">{candidate.mobile}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
+
+      {/* Add Candidate Modal */}
+      {showModal && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black/60 z-50">
+          <div className="bg-white rounded-xl shadow-lg p-6 w-full max-w-md">
+            <h2 className="text-lg font-semibold mb-4">Add Candidate</h2>
+
+            <form onSubmit={handleAddCandidate} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium">Full Name</label>
+                <input
+                  type="text"
+                  value={newCandidate.full_name}
+                  onChange={(e) =>
+                    setNewCandidate({ ...newCandidate, full_name: e.target.value })
+                  }
+                  className="w-full border rounded-lg px-3 py-2 mt-1"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium">Email</label>
+                <input
+                  type="email"
+                  value={newCandidate.email}
+                  onChange={(e) =>
+                    setNewCandidate({ ...newCandidate, email: e.target.value })
+                  }
+                  className="w-full border rounded-lg px-3 py-2 mt-1"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium">Mobile (UK)</label>
+                <input
+                  type="text"
+                  value={newCandidate.mobile}
+                  onChange={(e) =>
+                    setNewCandidate({ ...newCandidate, mobile: e.target.value })
+                  }
+                  placeholder="07xxxxxxxxx"
+                  className="w-full border rounded-lg px-3 py-2 mt-1"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 mt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowModal(false)}
+                  className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+                >
+                  Save
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
