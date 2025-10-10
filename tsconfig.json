@@ -24,11 +24,19 @@
       }
     ]
   },
+
   "include": [
     "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts"
   ],
-  "exclude": ["node_modules"]
+
+  "exclude": [
+    "node_modules",
+    "supabase/functions",      // 👈 Prevents Vercel from type-checking Deno code
+    "supabase/.temp",          // optional: Supabase build cache folder
+    "**/*.test.ts",            // optional: skip local tests
+    "**/*.spec.ts"             // optional: skip spec files
+  ]
 }

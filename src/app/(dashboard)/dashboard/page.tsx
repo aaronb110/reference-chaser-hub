@@ -251,27 +251,38 @@ export default function DashboardPage() {
           </select>
         </div>
 
-        {/* Candidate List */}
-        <div className="bg-white rounded-xl shadow overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-100">
-              <tr>
-                <th className="py-3 px-4">Candidate</th>
-                <th className="py-3 px-4">Email</th>
-                <th className="py-3 px-4">Mobile</th>
-              </tr>
-            </thead>
-            <tbody>
-              {candidates.map((candidate) => (
-                <tr key={candidate.id} className="border-b hover:bg-gray-50">
-                  <td className="p-3">{candidate.full_name}</td>
-                  <td className="p-3">{candidate.email}</td>
-                  <td className="p-3 text-gray-500 text-sm">{candidate.mobile}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+{/* Candidate List */}
+<div className="bg-white rounded-xl shadow overflow-hidden">
+  <table className="w-full text-sm table-auto">
+    <thead className="bg-gray-100 text-gray-700 text-left">
+      <tr>
+        <th className="py-3 px-4 font-medium">Candidate</th>
+        <th className="py-3 px-4 font-medium">Email</th>
+        <th className="py-3 px-4 font-medium">Mobile</th>
+        <th className="py-3 px-4 font-medium">Date Added</th>
+      </tr>
+    </thead>
+    <tbody>
+      {candidates.map((candidate) => (
+        <tr key={candidate.id} className="border-b hover:bg-gray-50">
+          <td className="p-3 align-middle">{candidate.full_name}</td>
+          <td className="p-3 align-middle">{candidate.email}</td>
+          <td className="p-3 align-middle text-gray-600">{candidate.mobile}</td>
+          <td className="p-3 align-middle text-gray-500 text-xs">
+            {candidate.created_at
+              ? new Date(candidate.created_at).toLocaleDateString("en-GB", {
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                })
+              : "—"}
+          </td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+</div>
+
       </div>
 
       {/* Add Candidate Modal */}
