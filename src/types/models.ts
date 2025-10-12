@@ -4,6 +4,8 @@ export type Candidate = {
   email: string;
   mobile: string;
   created_at?: string;
+  created_by?: string;
+
 };
 
 export type Referee = {

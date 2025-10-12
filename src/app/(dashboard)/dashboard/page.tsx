@@ -13,6 +13,12 @@ import React from "react";
 const ukToE164 = (mobile: string) =>
   /^07\d{9}$/.test(mobile) ? "+44" + mobile.slice(1) : mobile;
 
+const formatDate = (value?: string | null) => {
+  if (!value) return "-";
+  return new Date(value).toLocaleDateString("en-GB");
+};
+
+
 type Role = "user" | "manager" | "admin";
 
 export default function DashboardPage() {
@@ -32,7 +38,8 @@ export default function DashboardPage() {
   const [settings, setSettings] = useState<{ overdue_days: number } | null>(null);
 
   const [search, setSearch] = useState("");
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
+
   const [showModal, setShowModal] = useState(false);
   const [newCandidate, setNewCandidate] = useState({
     full_name: "",
@@ -40,6 +47,11 @@ export default function DashboardPage() {
     mobile: "",
   });
   const [sending, setSending] = useState(false);
+const [sortBy, setSortBy] = useState<
+  "created_desc" | "created_asc" | "name_asc" | "name_desc"
+>("created_desc");
+const [viewMode, setViewMode] = useState<"mine" | "others" | "all">("mine");
+
 
     // ── Load auth + profile ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -82,14 +94,15 @@ export default function DashboardPage() {
         }
 
         // Load account settings + data
-        if (profile?.company_id && !cancelled) {
-          const { data: settingsData } = await supabase
-            .from("account_settings")
-            .select("overdue_days")
-            .eq("company_id", profile.company_id)
-            .maybeSingle();
-          setSettings(settingsData ?? { overdue_days: 7 });
-        }
+if (profile?.company_id) {
+  const { data: settingsData } = await supabase
+    .from("account_settings")
+    .select("overdue_days")
+    .eq("company_id", profile.company_id)
+    .maybeSingle();
+  setSettings(settingsData ?? { overdue_days: 7 });
+}
+
 
         if (!cancelled) {
           const [{ data: cData }, { data: rData }, { data: reqData }] =
@@ -129,17 +142,8 @@ export default function DashboardPage() {
     [requests]
   );
 
-  const filteredCandidates = useMemo(() => {
-    const query = search.toLowerCase();
-    return candidates.filter(
-      (c) =>
-        c.full_name.toLowerCase().includes(query) ||
-        c.email.toLowerCase().includes(query)
-    );
-  }, [candidates, search]);
-
 const toggleExpand = (id: string) => {
-  setExpandedId(prev => (prev === id ? null : id));
+  setExpanded(prev => (prev === id ? null : id));
 };
 
 
@@ -158,7 +162,6 @@ const toggleExpand = (id: string) => {
         created_by: userId,
       },
     ]);
-
     if (error) {
       toast.error("Error adding candidate");
       console.error(error);
@@ -173,6 +176,34 @@ const toggleExpand = (id: string) => {
       if (refreshed) setCandidates(refreshed);
     }
   };
+
+  // ── Archive Candidate ───────────────────────────────────────────────
+const handleArchiveCandidate = async (candidateId: string, name: string) => {
+  const confirmArchive = window.confirm(
+    `Are you sure you want to archive ${name}? This will archive them from your active dashboard and will only be recoverable by an administrator.`
+  );
+  if (!confirmArchive) return;
+
+  try {
+    const { error } = await supabase
+      .from("candidates")
+      .update({ archived: true })
+      .eq("id", candidateId);
+
+    if (error) throw error;
+
+    toast.success(`${name} archived successfully`);
+
+    // Refresh local list
+    setCandidates((prev) =>
+      prev.filter((candidate) => candidate.id !== candidateId)
+    );
+  } catch (err) {
+    console.error("Archive error:", err);
+    toast.error("Failed to archive candidate");
+  }
+};
+
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -195,6 +226,56 @@ const toggleExpand = (id: string) => {
     }
   };
 
+
+
+ // ── Derived Data ─────────────────────────────────────────────────────────────
+const filteredCandidates = useMemo(() => {
+  let result = [...candidates];
+
+  if (search.trim()) {
+    const s = search.toLowerCase();
+    result = result.filter(
+      (c) =>
+        c.full_name.toLowerCase().includes(s) ||
+        c.email.toLowerCase().includes(s)
+    );
+  }
+
+  if (viewMode === "mine") {
+    result = result.filter((c) => c.created_by === userId);
+  } else if (viewMode === "others") {
+    result = result.filter((c) => c.created_by !== userId);
+  }
+
+  switch (sortBy) {
+  case "name_asc":
+    result.sort((a, b) => a.full_name.localeCompare(b.full_name));
+    break;
+
+  case "name_desc":
+    result.sort((a, b) => b.full_name.localeCompare(a.full_name));
+    break;
+
+  case "created_asc":
+    result.sort((a, b) => {
+      const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return dateA - dateB;
+    });
+    break;
+
+  default: // created_desc
+    result.sort((a, b) => {
+      const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return dateB - dateA;
+    });
+}
+
+
+  return result;
+}, [candidates, search, sortBy, viewMode, userId]);
+
     // ── Render ─────────────────────────────────────────────────────────────────
   if (loadingProfile) {
     return (
@@ -204,254 +285,186 @@ const toggleExpand = (id: string) => {
     );
   }
 
-  return (
-    <div className="min-h-screen bg-gray-50 p-8">
-      <div className="max-w-7xl mx-auto space-y-8">
-        {/* Header */}
-        <div className="flex justify-between items-start gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Reference Dashboard</h1>
-            {userEmail && (
-              <p className="text-sm text-gray-500 mt-1">
-                👋 Welcome, <span className="font-medium">{userEmail}</span>
-              </p>
-            )}
+// ── Render ───────────────────────────────────────────────────────────────────
+return (
+  <div className="min-h-screen bg-gray-50 p-8">
+    <div className="max-w-7xl mx-auto space-y-8">
+      {/* Header */}
+      <div className="flex justify-between items-start gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Reference Dashboard</h1>
+          {userEmail && (
+            <p className="text-sm text-gray-500 mt-1">
+              👋 Welcome, <span className="font-medium">{userEmail}</span>
+            </p>
+          )}
+        </div>
 
-            <div className="grid grid-cols-3 gap-3 mt-4">
-              <div className="bg-blue-50 rounded-xl p-3 text-center">
-                <p className="text-xs text-gray-600">Pending</p>
-                <p className="text-lg font-semibold text-blue-700">{pendingCount}</p>
-              </div>
-              <div className="bg-yellow-50 rounded-xl p-3 text-center">
-                <p className="text-xs text-gray-600">
-                  Overdue ({settings?.overdue_days ?? 7}d)
-                </p>
-                <p className="text-lg font-semibold text-yellow-700">{overdueCount}</p>
-              </div>
-              <div className="bg-green-50 rounded-xl p-3 text-center">
-                <p className="text-xs text-gray-600">Completed</p>
-                <p className="text-lg font-semibold text-green-700">{completedCount}</p>
-              </div>
-            </div>
-          </div>
+        <div className="flex gap-2">
+          {role !== "user" && (
+            <button
+              onClick={handleTestEmail}
+              disabled={sending}
+              className={`px-4 py-2 rounded-lg font-medium shadow transition ${
+                sending
+                  ? "bg-gray-400 text-white cursor-not-allowed"
+                  : "bg-green-600 hover:bg-green-700 text-white"
+              }`}
+            >
+              {sending ? "Sending..." : "📧 Test Email"}
+            </button>
+          )}
+          <button
+            onClick={() => setShowModal(true)}
+            className="px-4 py-2 rounded-lg bg-blue-600 text-white font-medium shadow hover:bg-blue-700 transition"
+          >
+            + Add Candidate
+          </button>
+          <button
+            onClick={handleSignOut}
+            className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100"
+          >
+            Sign Out
+          </button>
+        </div>
+      </div>
 
-          <div className="flex gap-2">
-            {role !== "user" && (
+      {/* Filters and Search */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mt-6">
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            placeholder="Search candidates..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-2 w-60 text-sm"
+          />
+
+          <select
+            value={sortBy}
+            onChange={(e) =>
+              setSortBy(
+                e.target.value as
+                  | "created_desc"
+                  | "created_asc"
+                  | "name_asc"
+                  | "name_desc"
+              )
+            }
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+          >
+            <option value="created_desc">Newest first</option>
+            <option value="created_asc">Oldest first</option>
+            <option value="name_asc">Name A–Z</option>
+            <option value="name_desc">Name Z–A</option>
+          </select>
+
+          <div className="flex items-center gap-1">
+            {["mine", "others", "all"].map((mode) => (
               <button
-                onClick={handleTestEmail}
-                disabled={sending}
-                className={`px-4 py-2 rounded-lg font-medium shadow transition ${
-                  sending
-                    ? "bg-gray-400 text-white cursor-not-allowed"
-                    : "bg-green-600 hover:bg-green-700 text-white"
+                key={mode}
+                onClick={() => setViewMode(mode as "mine" | "others" | "all")}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                  viewMode === mode
+                    ? "bg-blue-600 text-white"
+                    : "bg-gray-100 hover:bg-gray-200 text-gray-700"
                 }`}
               >
-                {sending ? "Sending..." : "📧 Test Email"}
+                {mode.charAt(0).toUpperCase() + mode.slice(1)}
               </button>
-            )}
-            <button
-              onClick={() => setShowModal(true)}
-              className="px-4 py-2 rounded-lg bg-blue-600 text-white font-medium shadow hover:bg-blue-700 transition"
-            >
-              + Add Candidate
-            </button>
-            <button
-              onClick={handleSignOut}
-              className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100"
-            >
-              Sign Out
-            </button>
+            ))}
           </div>
         </div>
+      </div>
 
-        {/* Candidate Table */}
-        <div className="bg-white rounded-xl shadow overflow-hidden mt-6">
-          {filteredCandidates.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <div className="text-5xl mb-4">🧾</div>
-              <h3 className="text-lg font-semibold text-gray-800">No candidates</h3>
-              <p className="text-gray-500 mt-1 mb-6">
-                Add your first candidate to get started.
-              </p>
-            </div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead className="bg-gray-100 text-gray-700">
-                <tr>
-                  <th className="py-3 px-4 font-medium">Candidate</th>
-                  <th className="py-3 px-4 font-medium">Email</th>
-                  <th className="py-3 px-4 font-medium">Mobile</th>
-                  <th className="py-3 px-4 font-medium">Progress</th>
-                  <th className="py-3 px-4 font-medium text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-  {filteredCandidates.map((c) => (
-    <React.Fragment key={c.id}>
-      <tr className="border-b hover:bg-gray-50">
-        <td className="p-3">{c.full_name}</td>
-        <td className="p-3">{c.email}</td>
-        <td className="p-3 text-gray-500">{c.mobile}</td>
-        <td className="p-3 text-gray-600">
-          {candidateRequests(c.id).filter((r) => r.status === "completed").length}/
-          {candidateRequests(c.id).length} complete
-        </td>
-        <td className="p-3 text-xs text-gray-500">
-          {c.created_at
-            ? new Date(c.created_at).toLocaleDateString("en-GB")
-            : "-"}
-        </td>
-        <td className="p-3 text-right">
-          <button
-            onClick={() => toggleExpand(c.id)}
-            className="text-blue-600 hover:underline"
-          >
-            {expandedId === c.id ? "Hide" : "View"}
-          </button>
-        </td>
-      </tr>
-
-      {/* Inline expanded row */}
-      {expandedId === c.id && (
-        <tr className="bg-gray-50 border-b">
-          <td colSpan={6} className="p-4">
-            <CandidateDetails
-              candidate={c}
-              role={role}
-              companyId={companyId}
-              referees={referees.filter((r) => r.candidate_id === c.id)}
-              requests={requests.filter((r) => r.candidate_id === c.id)}
-              onRefresh={async () => {
-                const { data } = await supabase
-                  .from("reference_requests")
-                  .select("*");
-                if (data) setRequests(data);
-              }}
-            />
-          </td>
-        </tr>
-      )}
-    </React.Fragment>
-  ))}
-</tbody>
-
-            </table>
-          )}
-        </div>
-
-
-
-          {/* Add Candidate Modal */}
-          {showModal && (
-            <div className="fixed inset-0 flex items-center justify-center bg-black/60 z-50">
-              <div className="bg-white rounded-xl shadow-lg p-6 w-full max-w-md">
-                <h2 className="text-lg font-semibold mb-4">Add Candidate</h2>
-                <form
-                  onSubmit={async (e) => {
-                    e.preventDefault();
-                    if (!newCandidate.full_name || !newCandidate.email) {
-                      toast.error("Please enter a name and email before saving.");
-                      return;
-                    }
-
-                    setSending(true);
-                    const { error } = await supabase.from("candidates").insert([
-                      {
-                        full_name: newCandidate.full_name,
-                        email: newCandidate.email,
-                        mobile: ukToE164(newCandidate.mobile),
-                        created_by: userId,
-                      },
-                    ]);
-
-                    if (error) {
-                      toast.error("Error adding candidate");
-                      console.error(error);
-                    } else {
-                      toast.success("Candidate added!");
-                      setShowModal(false);
-                      setNewCandidate({ full_name: "", email: "", mobile: "" });
-                      const { data: refreshed } = await supabase
-                        .from("candidates")
-                        .select("*")
-                        .order("created_at", { ascending: false });
-                      if (refreshed) setCandidates(refreshed);
-                    }
-                    setSending(false);
-                  }}
-                  className="space-y-4"
-                >
-                  <div>
-                    <label className="block text-sm font-medium">Full Name</label>
-                    <input
-                      type="text"
-                      value={newCandidate.full_name}
-                      onChange={(e) =>
-                        setNewCandidate({
-                          ...newCandidate,
-                          full_name: e.target.value,
-                        })
-                      }
-                      className="w-full border rounded-lg px-3 py-2 mt-1"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium">Email</label>
-                    <input
-                      type="email"
-                      value={newCandidate.email}
-                      onChange={(e) =>
-                        setNewCandidate({
-                          ...newCandidate,
-                          email: e.target.value,
-                        })
-                      }
-                      className="w-full border rounded-lg px-3 py-2 mt-1"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium">Mobile</label>
-                    <input
-                      type="text"
-                      value={newCandidate.mobile}
-                      onChange={(e) =>
-                        setNewCandidate({
-                          ...newCandidate,
-                          mobile: e.target.value,
-                        })
-                      }
-                      placeholder="07xxxxxxxxx"
-                      className="w-full border rounded-lg px-3 py-2 mt-1"
-                    />
-                  </div>
-
-                  <div className="flex justify-end gap-3 mt-4">
-                    <button
-                      type="button"
-                      onClick={() => setShowModal(false)}
-                      disabled={sending}
-                      className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 disabled:opacity-60"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={sending}
-                      className={`px-4 py-2 rounded-lg text-white font-medium shadow transition ${
-                        sending
-                          ? "bg-gray-400 cursor-not-allowed"
-                          : "bg-blue-600 hover:bg-blue-700"
-                      }`}
-                    >
-                      {sending ? "Saving..." : "Save"}
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
-        </div> {/* ← closes main content container */}
+{/* Candidate Table */}
+<div className="bg-white rounded-xl shadow overflow-hidden mt-6">
+  {filteredCandidates.length === 0 ? (
+    <div className="flex flex-col items-center justify-center py-16 text-center">
+      <div className="text-5xl mb-4">🧾</div>
+      <h3 className="text-lg font-semibold text-gray-800">No candidates</h3>
+      <p className="text-gray-500 mt-1 mb-6">
+        Add your first candidate to get started.
+      </p>
     </div>
-  );
-}
+  ) : (
+    <table className="w-full text-sm">
+      <thead className="bg-gray-100 text-gray-700">
+        <tr>
+          <th className="py-3 px-4 font-medium">Candidate</th>
+          <th className="py-3 px-4 font-medium">Email</th>
+          <th className="py-3 px-4 font-medium">Mobile</th>
+          <th className="py-3 px-4 font-medium">Progress</th>
+          <th className="py-3 px-4 font-medium">Added</th>
+          <th className="py-3 px-4 font-medium text-right">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {filteredCandidates.map((c) => (
+          <React.Fragment key={c.id}>
+            <tr className="border-b hover:bg-gray-50">
+              <td className="p-3">{c.full_name}</td>
+              <td className="p-3">{c.email}</td>
+              <td className="p-3 text-gray-500">{c.mobile}</td>
+              <td className="p-3 text-gray-600">
+                {
+                  requests.filter(
+                    (r) => r.candidate_id === c.id && r.status === "completed"
+                  ).length
+                }
+                /{requests.filter((r) => r.candidate_id === c.id).length} complete
+              </td>
+              <td className="p-3 text-xs text-gray-500">
+                {c.created_at
+                  ? new Date(c.created_at as string).toLocaleDateString("en-GB")
+                  : "-"}
+              </td>
+         <td className="p-3 text-right flex items-center justify-end gap-3">
+  <button
+    onClick={() => setExpanded((prev) => (prev === c.id ? null : c.id))}
+    className="text-blue-600 hover:underline"
+  >
+    {expanded === c.id ? "Hide" : "View"}
+  </button>
 
+  <button
+    onClick={() => handleArchiveCandidate(c.id, c.full_name)}
+    className="text-red-600 hover:underline"
+  >
+    Archive
+  </button>
+</td>
+
+            </tr>
+
+            {/* Expanded candidate details directly below each candidate */}
+            {expanded === c.id && (
+              <tr className="bg-gray-50 border-b">
+                <td colSpan={6} className="p-4">
+                  <CandidateDetails
+                    candidate={c}
+                    role={role}
+                    companyId={companyId}
+                    referees={referees.filter((r) => r.candidate_id === c.id)}
+                    requests={requests.filter((r) => r.candidate_id === c.id)}
+                    onRefresh={async () => {
+                      const { data } = await supabase
+                        .from("reference_requests")
+                        .select("*");
+                      if (data) setRequests(data);
+                    }}
+                  />
+                </td>
+              </tr>
+            )}
+          </React.Fragment>
+        ))}
+      </tbody>
+    </table>
+  )}
+</div>
+
+    </div>
+  </div>
+);
+}
