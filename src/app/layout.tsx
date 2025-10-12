@@ -1,6 +1,6 @@
 import "./globals.css";
 import type { Metadata } from "next";
-import SupabaseProvider from "@/components/SupabaseProvider";
+import ClientRoot from "./ClientRoot"; // 👈 new file we’ll add next
 
 export const metadata: Metadata = {
   title: "Refevo – Reference Hub",
@@ -11,7 +11,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body className="bg-gray-50 text-gray-900 antialiased">
-        <SupabaseProvider>{children}</SupabaseProvider>
+        <ClientRoot>{children}</ClientRoot>
       </body>
     </html>
   );
