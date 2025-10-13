@@ -51,6 +51,10 @@ const [sortBy, setSortBy] = useState<
   "created_desc" | "created_asc" | "name_asc" | "name_desc"
 >("created_desc");
 const [viewMode, setViewMode] = useState<"mine" | "others" | "all">("mine");
+const canManage = role === "manager" || role === "admin"; 
+const [showArchived, setShowArchived] = useState(false); // managers only
+
+
 
 
     // ── Load auth + profile ─────────────────────────────────────────────────────
@@ -105,12 +109,16 @@ if (profile?.company_id) {
 
 
         if (!cancelled) {
-          const [{ data: cData }, { data: rData }, { data: reqData }] =
-            await Promise.all([
-              supabase.from("candidates").select("*").order("created_at", { ascending: false }),
-              supabase.from("referees").select("*"),
-              supabase.from("reference_requests").select("*"),
-            ]);
+const [{ data: cData }, { data: rData }, { data: reqData }] =
+  await Promise.all([
+    supabase
+      .from("candidates")
+      .select("id, full_name, email, mobile, created_at, created_by, is_archived, archived_by, archived_at")
+      .order("created_at", { ascending: false }),
+    supabase.from("referees").select("*"),
+    supabase.from("reference_requests").select("*"),
+  ]);
+
           if (cData) setCandidates(cData);
           if (rData) setReferees(rData);
           if (reqData) setRequests(reqData);
@@ -179,30 +187,35 @@ const toggleExpand = (id: string) => {
 
   // ── Archive Candidate ───────────────────────────────────────────────
 const handleArchiveCandidate = async (candidateId: string, name: string) => {
+  if (!canManage) return; // UI guard
+
   const confirmArchive = window.confirm(
-    `Are you sure you want to archive ${name}? This will archive them from your active dashboard and will only be recoverable by an administrator.`
+    `Archive ${name}? They’ll be hidden from standard users.`
   );
   if (!confirmArchive) return;
 
   try {
     const { error } = await supabase
       .from("candidates")
-      .update({ archived: true })
+      .update({
+        is_archived: true,                 
+        archived_at: new Date().toISOString(),
+        archived_by: userId ?? null,
+      })
       .eq("id", candidateId);
 
     if (error) throw error;
 
-    toast.success(`${name} archived successfully`);
-
-    // Refresh local list
+    toast.success(`${name} archived`);
     setCandidates((prev) =>
-      prev.filter((candidate) => candidate.id !== candidateId)
+      prev.map((c) => (c.id === candidateId ? { ...c, is_archived: true, archived_at: new Date().toISOString(), archived_by: userId ?? null } : c))
     );
   } catch (err) {
     console.error("Archive error:", err);
     toast.error("Failed to archive candidate");
   }
 };
+
 
 
   const handleSignOut = async () => {
@@ -226,12 +239,40 @@ const handleArchiveCandidate = async (candidateId: string, name: string) => {
     }
   };
 
+const handleUnarchiveCandidate = async (candidateId: string, name: string) => {
+  if (!canManage) return;
+
+  const confirmUnarchive = window.confirm(`Restore ${name}?`);
+  if (!confirmUnarchive) return;
+
+  try {
+    const { error } = await supabase
+      .from("candidates")
+      .update({
+        is_archived: false,
+        archived_at: null,
+        archived_by: null,
+      })
+      .eq("id", candidateId);
+
+    if (error) throw error;
+
+    toast.success(`${name} restored`);
+    setCandidates((prev) =>
+      prev.map((c) => (c.id === candidateId ? { ...c, is_archived: false, archived_at: null, archived_by: null } : c))
+    );
+  } catch (err) {
+    console.error("Unarchive error:", err);
+    toast.error("Failed to restore candidate");
+  }
+};
 
 
- // ── Derived Data ─────────────────────────────────────────────────────────────
+// ── Derived Data ─────────────────────────────────────────────────────────────
 const filteredCandidates = useMemo(() => {
   let result = [...candidates];
 
+  // search
   if (search.trim()) {
     const s = search.toLowerCase();
     result = result.filter(
@@ -241,40 +282,46 @@ const filteredCandidates = useMemo(() => {
     );
   }
 
+  // view filter
   if (viewMode === "mine") {
     result = result.filter((c) => c.created_by === userId);
   } else if (viewMode === "others") {
     result = result.filter((c) => c.created_by !== userId);
   }
 
+  // hide archived by default
+  if (!showArchived) {
+    result = result.filter((c) => !c.is_archived);
+  }
+
+  // sort
   switch (sortBy) {
-  case "name_asc":
-    result.sort((a, b) => a.full_name.localeCompare(b.full_name));
-    break;
+    case "name_asc":
+      result.sort((a, b) => a.full_name.localeCompare(b.full_name));
+      break;
+    case "name_desc":
+      result.sort((a, b) => b.full_name.localeCompare(a.full_name));
+      break;
+    case "created_asc":
+      result.sort((a, b) => {
+        const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return dateA - dateB;
+      });
+      break;
+    default: // created_desc
+      result.sort((a, b) => {
+        const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return dateB - dateA;
+      });
+  }
 
-  case "name_desc":
-    result.sort((a, b) => b.full_name.localeCompare(a.full_name));
-    break;
-
-  case "created_asc":
-    result.sort((a, b) => {
-      const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
-      const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
-      return dateA - dateB;
-    });
-    break;
-
-  default: // created_desc
-    result.sort((a, b) => {
-      const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
-      const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
-      return dateB - dateA;
-    });
-}
-
-
+  // ✅ Return only data – no JSX here
   return result;
-}, [candidates, search, sortBy, viewMode, userId]);
+}, [candidates, search, sortBy, viewMode, userId, showArchived]);
+
+
 
     // ── Render ─────────────────────────────────────────────────────────────────
   if (loadingProfile) {
@@ -329,53 +376,78 @@ return (
         </div>
       </div>
 
-      {/* Filters and Search */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mt-6">
-        <div className="flex items-center gap-2">
-          <input
-            type="text"
-            placeholder="Search candidates..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 w-60 text-sm"
-          />
 
-          <select
-            value={sortBy}
-            onChange={(e) =>
-              setSortBy(
-                e.target.value as
-                  | "created_desc"
-                  | "created_asc"
-                  | "name_asc"
-                  | "name_desc"
-              )
-            }
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-          >
-            <option value="created_desc">Newest first</option>
-            <option value="created_asc">Oldest first</option>
-            <option value="name_asc">Name A–Z</option>
-            <option value="name_desc">Name Z–A</option>
-          </select>
+<div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mt-6">
+  <div className="flex items-center gap-2">
+    <input
+      type="text"
+      placeholder="Search candidates..."
+      value={search}
+      onChange={(e) => setSearch(e.target.value)}
+      className="border border-gray-300 rounded-lg px-3 py-2 w-60 text-sm"
+    />
 
-          <div className="flex items-center gap-1">
-            {["mine", "others", "all"].map((mode) => (
-              <button
-                key={mode}
-                onClick={() => setViewMode(mode as "mine" | "others" | "all")}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
-                  viewMode === mode
-                    ? "bg-blue-600 text-white"
-                    : "bg-gray-100 hover:bg-gray-200 text-gray-700"
-                }`}
-              >
-                {mode.charAt(0).toUpperCase() + mode.slice(1)}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
+    <select
+      value={sortBy}
+      onChange={(e) =>
+        setSortBy(
+          e.target.value as
+            | "created_desc"
+            | "created_asc"
+            | "name_asc"
+            | "name_desc"
+        )
+      }
+      className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+    >
+      <option value="created_desc">Newest first</option>
+      <option value="created_asc">Oldest first</option>
+      <option value="name_asc">Name A–Z</option>
+      <option value="name_desc">Name Z–A</option>
+    </select>
+
+    <div className="flex items-center gap-1">
+      {["mine", "others", "all"].map((mode) => (
+        <button
+          key={mode}
+          onClick={() => setViewMode(mode as "mine" | "others" | "all")}
+          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+            viewMode === mode
+              ? "bg-blue-600 text-white"
+              : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+          }`}
+        >
+          {mode.charAt(0).toUpperCase() + mode.slice(1)}
+        </button>
+      ))}
+    </div>
+
+    {/* ✅ Manager-only: Show archived toggle */}
+{canManage && (
+  <button
+    onClick={() => setShowArchived(!showArchived)}
+    className={`ml-3 flex items-center gap-2 text-sm select-none transition ${
+      showArchived ? "text-teal-600" : "text-gray-600"
+    }`}
+  >
+    <span>Show archived</span>
+    <span
+      className={`relative inline-flex h-5 w-10 rounded-full transition-colors duration-300 ${
+        showArchived ? "bg-teal-500" : "bg-gray-300"
+      }`}
+    >
+      <span
+        className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform duration-300 ${
+          showArchived ? "translate-x-5" : "translate-x-0"
+        }`}
+      />
+    </span>
+  </button>
+)}
+
+  </div>
+</div>
+
 
 {/* Candidate Table */}
 <div className="bg-white rounded-xl shadow overflow-hidden mt-6">
@@ -419,7 +491,8 @@ return (
                   ? new Date(c.created_at as string).toLocaleDateString("en-GB")
                   : "-"}
               </td>
-         <td className="p-3 text-right flex items-center justify-end gap-3">
+<td className="p-3 text-right flex items-center justify-end gap-3">
+  {/* View / Hide button stays for all users */}
   <button
     onClick={() => setExpanded((prev) => (prev === c.id ? null : c.id))}
     className="text-blue-600 hover:underline"
@@ -427,13 +500,29 @@ return (
     {expanded === c.id ? "Hide" : "View"}
   </button>
 
-  <button
-    onClick={() => handleArchiveCandidate(c.id, c.full_name)}
-    className="text-red-600 hover:underline"
-  >
-    Archive
-  </button>
+  {/* ✅ Archive / Unarchive buttons — managers & admins only */}
+  {canManage && (
+    <>
+      {!c.is_archived ? (
+        <button
+          onClick={() => handleArchiveCandidate(c.id, c.full_name)}
+          className="text-red-600 hover:underline"
+        >
+          Archive
+        </button>
+      ) : (
+        <button
+          onClick={() => handleUnarchiveCandidate(c.id, c.full_name)}
+          className="text-teal-700 hover:underline"
+        >
+          Unarchive
+        </button>
+      )}
+    </>
+  )}
 </td>
+
+
 
             </tr>
 

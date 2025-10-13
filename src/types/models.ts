@@ -5,6 +5,9 @@ export type Candidate = {
   mobile: string;
   created_at?: string;
   created_by?: string;
+  is_archived?: boolean;        
+  archived_by?: string | null;  
+  archived_at?: string | null;  
 
 };
 
