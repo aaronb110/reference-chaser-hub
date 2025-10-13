@@ -7,6 +7,8 @@ import { supabase } from "@/lib/supabaseClient";
 import CandidateDetails from "./components/CandidateDetails";
 import type { Candidate, Referee, Request } from "@/types/models";
 import React from "react";
+import { customAlphabet } from "nanoid";
+
 
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -35,7 +37,8 @@ export default function DashboardPage() {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [referees, setReferees] = useState<Referee[]>([]);
   const [requests, setRequests] = useState<Request[]>([]);
-  const [settings, setSettings] = useState<{ overdue_days: number } | null>(null);
+  const [settings, setSettings] = useState<{ overdue_days: number; company_name?: string } | null>(null);
+
 
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -45,6 +48,7 @@ export default function DashboardPage() {
     full_name: "",
     email: "",
     mobile: "",
+    template_id: "",
   });
   const [sending, setSending] = useState(false);
 const [sortBy, setSortBy] = useState<
@@ -53,88 +57,120 @@ const [sortBy, setSortBy] = useState<
 const [viewMode, setViewMode] = useState<"mine" | "others" | "all">("mine");
 const canManage = role === "manager" || role === "admin"; 
 const [showArchived, setShowArchived] = useState(false); // managers only
+const nano = customAlphabet("123456789ABCDEFGHJKLMNPQRSTUVWXYZ", 20);
+
+// Reference templates for the modal dropdown
+const [templates, setTemplates] = useState<
+  { id: string; name: string; description?: string | null }[]
+>([]);
 
 
 
 
-    // ── Load auth + profile ─────────────────────────────────────────────────────
-  useEffect(() => {
-    let cancelled = false;
 
-    const loadProfile = async () => {
-      console.log("🚀 Starting profile load...");
-      try {
-        const { data: sessionData } = await supabase.auth.getSession();
-        const session = sessionData?.session;
-        const user = session?.user ?? null;
 
-        if (!user) {
-          console.warn("⚠️ No session found — redirecting to /login");
-          if (!cancelled) {
-            setLoadingProfile(false);
-            router.push("/login");
-          }
-          return;
-        }
 
-        console.log("👤 User:", user.email);
+
+useEffect(() => {
+  let cancelled = false;
+
+  async function loadProfile() {
+    console.log("🚀 Starting profile load...");
+    try {
+      // ── Session ──────────────────────────────────────────────────────────────
+      const { data: sessionData } = await supabase.auth.getSession();
+      const user = sessionData?.session?.user ?? null;
+
+      if (!user) {
+        console.warn("⚠️ No session found — redirecting to /login");
         if (!cancelled) {
-          setUserId(user.id);
-          setUserEmail(user.email ?? null);
+          setLoadingProfile(false);
+          router.push("/login");
         }
+        return;
+      }
 
-        const { data: profile, error } = await supabase
-          .from("profiles")
-          .select("role, company_id")
-          .eq("id", user.id)
+      if (!cancelled) {
+        setUserId(user.id);
+        setUserEmail(user.email ?? null);
+      }
+
+      // ── Profile ─────────────────────────────────────────────────────────────
+      const { data: profile, error: profileErr } = await supabase
+        .from("profiles")
+        .select("role, company_id")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (profileErr) console.error("Profile load error:", profileErr.message);
+
+      const companyIdLocal = profile?.company_id ?? null;
+
+      if (!cancelled) {
+        setRole((profile?.role as Role) ?? "user");
+        setCompanyId(companyIdLocal);
+      }
+
+      // ── Account settings ────────────────────────────────────────────────────
+      if (companyIdLocal) {
+        const { data: settingsData } = await supabase
+          .from("account_settings")
+          .select("overdue_days, company_name")
+          .eq("company_id", companyIdLocal)
           .maybeSingle();
 
-        if (error) console.error("Profile load error:", error.message);
-        else if (!profile) console.warn("⚠️ No profile found for user");
-        else if (!cancelled) {
-          console.log("🏢 Profile loaded:", profile);
-          setRole((profile.role as Role) || "user");
-          setCompanyId(profile.company_id ?? null);
-        }
-
-        // Load account settings + data
-if (profile?.company_id) {
-  const { data: settingsData } = await supabase
-    .from("account_settings")
-    .select("overdue_days")
-    .eq("company_id", profile.company_id)
-    .maybeSingle();
-  setSettings(settingsData ?? { overdue_days: 7 });
-}
-
-
-        if (!cancelled) {
-const [{ data: cData }, { data: rData }, { data: reqData }] =
-  await Promise.all([
-    supabase
-      .from("candidates")
-      .select("id, full_name, email, mobile, created_at, created_by, is_archived, archived_by, archived_at")
-      .order("created_at", { ascending: false }),
-    supabase.from("referees").select("*"),
-    supabase.from("reference_requests").select("*"),
-  ]);
-
-          if (cData) setCandidates(cData);
-          if (rData) setReferees(rData);
-          if (reqData) setRequests(reqData);
-        }
-      } catch (err) {
-        console.error("❌ Error loading profile:", err);
-      } finally {
-        if (!cancelled) setLoadingProfile(false);
+        if (!cancelled) setSettings(settingsData ?? { overdue_days: 7 });
       }
-    };
 
-    loadProfile();
-    return () => {
-      cancelled = true;
-    };
-  }, [router]);
+      // ── Bulk data fetch (candidates, referees, requests, templates) ─────────
+      if (!cancelled) {
+        const [cands, refs, reqs, tmpls] = await Promise.all([
+          supabase
+            .from("candidates")
+            .select(
+              "id, full_name, email, mobile, created_at, created_by, is_archived, archived_by, archived_at"
+            )
+            .order("created_at", { ascending: false }),
+          supabase.from("referees").select("*"),
+          supabase.from("reference_requests").select("*"),
+          supabase
+            .from("reference_templates")
+            .select("id, name, description")
+            .order("name", { ascending: true }),
+        ]);
+
+        if (cands.data) setCandidates(cands.data as Candidate[]);
+        if (refs.data) setReferees(refs.data as Referee[]);
+        if (reqs.data) setRequests(reqs.data as Request[]);
+
+        if (tmpls.error) {
+          console.error("Template load error:", tmpls.error.message);
+        } else if (tmpls.data) {
+          console.log("📄 Loaded templates:", tmpls.data);
+          setTemplates(
+            tmpls.data as {
+              id: string;
+              name: string;
+              description?: string | null;
+            }[]
+          );
+        }
+      }
+    } catch (err) {
+      console.error("❌ Error loading profile:", err);
+    } finally {
+      if (!cancelled) setLoadingProfile(false);
+    }
+  }
+
+  loadProfile();
+  return () => {
+    cancelled = true;
+  };
+}, [router]);
+
+
+  
 
     // ── Derived counts ──────────────────────────────────────────────────────────
   const pendingCount = useMemo(
@@ -159,31 +195,92 @@ const toggleExpand = (id: string) => {
     requests.filter((r) => r.candidate_id === id);
 
   const handleAddCandidate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newCandidate.full_name || !newCandidate.email) return;
+  e.preventDefault();
+  if (!newCandidate.full_name || !newCandidate.email) return;
 
-    const { error } = await supabase.from("candidates").insert([
-      {
-        full_name: newCandidate.full_name,
-        email: newCandidate.email,
-        mobile: ukToE164(newCandidate.mobile),
-        created_by: userId,
+  const consentToken = nano();
+console.log("Submitting candidate:", newCandidate);
+
+  const { error } = await supabase.from("candidates").insert([
+    {
+      full_name: newCandidate.full_name,
+      email: newCandidate.email,
+      mobile: ukToE164(newCandidate.mobile),
+      created_by: userId,
+      consent_token: consentToken,
+      status: "awaiting_consent",
+      consent_status: "pending",
+      template_id: newCandidate.template_id?.length ? newCandidate.template_id : null,
+
+    },
+  ]);
+
+  // ── Resend Invite ─────────────────────────────────────────────────────────────
+const handleResendInvite = async (candidate: Candidate) => {
+  if (!candidate.email || !candidate.full_name) {
+    toast.error("Missing candidate info");
+    return;
+  }
+
+  try {
+    // use existing token or create a new one if it's missing
+    const token = candidate.consent_token || nano();
+
+    const { data, error } = await supabase.functions.invoke("send-consent-email", {
+      body: {
+        name: candidate.full_name,
+        email: candidate.email,
+        consent_token: token,          // ✅ match the DB key name
+        companyName: "Appetite4Work",  // optional
       },
-    ]);
-    if (error) {
-      toast.error("Error adding candidate");
-      console.error(error);
-    } else {
-      toast.success("Candidate added!");
-      setShowModal(false);
-      setNewCandidate({ full_name: "", email: "", mobile: "" });
-      const { data: refreshed } = await supabase
-        .from("candidates")
-        .select("*")
-        .order("created_at", { ascending: false });
-      if (refreshed) setCandidates(refreshed);
-    }
-  };
+    });
+
+    if (error) throw error;
+
+    toast.success("Consent email re-sent");
+    console.log("📧 Resent invite:", data);
+  } catch (err) {
+    console.error("Resend failed:", err);
+    toast.error("Failed to resend invite");
+  }
+};
+
+
+
+;
+  if (error) {
+    toast.error("Error adding candidate");
+    console.error(error);
+    return;
+  }
+
+  // ✅ Send combined consent + referee email
+  try {
+    await supabase.functions.invoke("send-consent-email", {
+      body: {
+        name: newCandidate.full_name,
+        email: newCandidate.email,
+        consentToken,
+      },
+    });
+    console.log("📧 Consent + referee invite email sent");
+  } catch (err) {
+    console.error("Failed to send consent email:", err);
+    toast.error("Candidate added, but email not sent");
+  }
+
+  toast.success("Candidate added!");
+  setShowModal(false);
+  setNewCandidate({ full_name: "", email: "", mobile: "", template_id: "" });
+
+  // (B) refresh the list
+  const { data: refreshed } = await supabase
+    .from("candidates")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (refreshed) setCandidates(refreshed);
+};
+
 
   // ── Archive Candidate ───────────────────────────────────────────────
 const handleArchiveCandidate = async (candidateId: string, name: string) => {
@@ -264,6 +361,37 @@ const handleUnarchiveCandidate = async (candidateId: string, name: string) => {
   } catch (err) {
     console.error("Unarchive error:", err);
     toast.error("Failed to restore candidate");
+  }
+};
+
+// ── Resend Consent + Referee Invite ───────────────────────────────────────────
+const handleResendInvite = async (candidate: Candidate) => {
+  if (!candidate.email || !candidate.full_name) {
+    toast.error("Missing candidate info");
+    return;
+  }
+
+  try {
+    // ✅ Define token before use
+    const token = candidate.consent_token || nano(); // nano() creates a new one if missing
+
+    const { data, error } = await supabase.functions.invoke("send-consent-email", {
+      body: {
+        name: candidate.full_name,
+        email: candidate.email,
+        consent_token: token,  // ✅ matches backend key
+        companyName: settings?.company_name || null,
+
+      },
+    });
+
+    if (error) throw error;
+
+    toast.success("Consent email re-sent");
+    console.log("📧 Resent invite:", data);
+  } catch (err) {
+    console.error("Resend failed:", err);
+    toast.error("Failed to resend invite");
   }
 };
 
@@ -376,134 +504,143 @@ return (
         </div>
       </div>
 
+      {/* Filters and Search */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mt-6">
+        <div className="flex items-center gap-2">
+          {/* Search */}
+          <input
+            type="text"
+            placeholder="Search candidates..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-2 w-60 text-sm"
+          />
 
-<div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mt-6">
-  <div className="flex items-center gap-2">
-    <input
-      type="text"
-      placeholder="Search candidates..."
-      value={search}
-      onChange={(e) => setSearch(e.target.value)}
-      className="border border-gray-300 rounded-lg px-3 py-2 w-60 text-sm"
-    />
+          {/* Sort */}
+          <select
+            value={sortBy}
+            onChange={(e) =>
+              setSortBy(
+                e.target.value as
+                  | "created_desc"
+                  | "created_asc"
+                  | "name_asc"
+                  | "name_desc"
+              )
+            }
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+          >
+            <option value="created_desc">Newest first</option>
+            <option value="created_asc">Oldest first</option>
+            <option value="name_asc">Name A–Z</option>
+            <option value="name_desc">Name Z–A</option>
+          </select>
 
-    <select
-      value={sortBy}
-      onChange={(e) =>
-        setSortBy(
-          e.target.value as
-            | "created_desc"
-            | "created_asc"
-            | "name_asc"
-            | "name_desc"
-        )
-      }
-      className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+          {/* View filter */}
+          <div className="flex items-center gap-1">
+            {["mine", "others", "all"].map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setViewMode(mode as "mine" | "others" | "all")}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                  viewMode === mode
+                    ? "bg-blue-600 text-white"
+                    : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+                }`}
+              >
+                {mode.charAt(0).toUpperCase() + mode.slice(1)}
+              </button>
+            ))}
+          </div>
+
+          {/* Show archived toggle (manager/admin only) */}
+          {canManage && (
+            <button
+              onClick={() => setShowArchived(!showArchived)}
+              className={`ml-3 flex items-center gap-2 text-sm select-none transition ${
+                showArchived ? "text-teal-600" : "text-gray-600"
+              }`}
+            >
+              <span>Show archived</span>
+              <span
+                className={`relative inline-flex h-5 w-10 rounded-full transition-colors duration-300 ${
+                  showArchived ? "bg-teal-500" : "bg-gray-300"
+                }`}
+              >
+                <span
+                  className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform duration-300 ${
+                    showArchived ? "translate-x-5" : "translate-x-0"
+                  }`}
+                />
+              </span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Candidate Table */}
+      <div className="bg-white rounded-xl shadow overflow-hidden mt-6">
+        {filteredCandidates.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <div className="text-5xl mb-4">🧾</div>
+            <h3 className="text-lg font-semibold text-gray-800">No candidates</h3>
+            <p className="text-gray-500 mt-1 mb-6">
+              Add your first candidate to get started.
+            </p>
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-gray-100 text-gray-700">
+              <tr>
+                <th className="py-3 px-4 font-medium">Candidate</th>
+                <th className="py-3 px-4 font-medium">Email</th>
+                <th className="py-3 px-4 font-medium">Mobile</th>
+                <th className="py-3 px-4 font-medium">Progress</th>
+                <th className="py-3 px-4 font-medium">Added</th>
+                <th className="py-3 px-4 font-medium text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredCandidates.map((c) => (
+                <React.Fragment key={c.id}>
+                  <tr className="border-b hover:bg-gray-50">
+                    <td className="p-3">{c.full_name}</td>
+                    <td className="p-3">{c.email}</td>
+                    <td className="p-3 text-gray-500">{c.mobile}</td>
+                    <td className="p-3 text-gray-600">
+                      {
+                        requests.filter(
+                          (r) => r.candidate_id === c.id && r.status === "completed"
+                        ).length
+                      }
+                      /{requests.filter((r) => r.candidate_id === c.id).length} complete
+                    </td>
+                    <td className="p-3 text-xs text-gray-500">
+                      {c.created_at
+                        ? new Date(c.created_at as string).toLocaleDateString("en-GB")
+                        : "-"}
+                    </td>
+<td className="p-3 text-right">
+  <div className="flex items-center justify-end gap-3">
+    {/* View / Hide */}
+    <button
+      onClick={() => setExpanded((prev) => (prev === c.id ? null : c.id))}
+      className="text-blue-600 hover:underline"
     >
-      <option value="created_desc">Newest first</option>
-      <option value="created_asc">Oldest first</option>
-      <option value="name_asc">Name A–Z</option>
-      <option value="name_desc">Name Z–A</option>
-    </select>
+      {expanded === c.id ? "Hide" : "View"}
+    </button>
 
-    <div className="flex items-center gap-1">
-      {["mine", "others", "all"].map((mode) => (
-        <button
-          key={mode}
-          onClick={() => setViewMode(mode as "mine" | "others" | "all")}
-          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
-            viewMode === mode
-              ? "bg-blue-600 text-white"
-              : "bg-gray-100 hover:bg-gray-200 text-gray-700"
-          }`}
-        >
-          {mode.charAt(0).toUpperCase() + mode.slice(1)}
-        </button>
-      ))}
-    </div>
-
-    {/* ✅ Manager-only: Show archived toggle */}
-{canManage && (
-  <button
-    onClick={() => setShowArchived(!showArchived)}
-    className={`ml-3 flex items-center gap-2 text-sm select-none transition ${
-      showArchived ? "text-teal-600" : "text-gray-600"
-    }`}
-  >
-    <span>Show archived</span>
-    <span
-      className={`relative inline-flex h-5 w-10 rounded-full transition-colors duration-300 ${
-        showArchived ? "bg-teal-500" : "bg-gray-300"
-      }`}
+    {/* Resend Invite */}
+    <button
+      onClick={() => handleResendInvite(c)}
+      className="text-teal-600 hover:underline"
     >
-      <span
-        className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform duration-300 ${
-          showArchived ? "translate-x-5" : "translate-x-0"
-        }`}
-      />
-    </span>
-  </button>
-)}
+      Resend Invite
+    </button>
 
-  </div>
-</div>
-
-
-{/* Candidate Table */}
-<div className="bg-white rounded-xl shadow overflow-hidden mt-6">
-  {filteredCandidates.length === 0 ? (
-    <div className="flex flex-col items-center justify-center py-16 text-center">
-      <div className="text-5xl mb-4">🧾</div>
-      <h3 className="text-lg font-semibold text-gray-800">No candidates</h3>
-      <p className="text-gray-500 mt-1 mb-6">
-        Add your first candidate to get started.
-      </p>
-    </div>
-  ) : (
-    <table className="w-full text-sm">
-      <thead className="bg-gray-100 text-gray-700">
-        <tr>
-          <th className="py-3 px-4 font-medium">Candidate</th>
-          <th className="py-3 px-4 font-medium">Email</th>
-          <th className="py-3 px-4 font-medium">Mobile</th>
-          <th className="py-3 px-4 font-medium">Progress</th>
-          <th className="py-3 px-4 font-medium">Added</th>
-          <th className="py-3 px-4 font-medium text-right">Action</th>
-        </tr>
-      </thead>
-      <tbody>
-        {filteredCandidates.map((c) => (
-          <React.Fragment key={c.id}>
-            <tr className="border-b hover:bg-gray-50">
-              <td className="p-3">{c.full_name}</td>
-              <td className="p-3">{c.email}</td>
-              <td className="p-3 text-gray-500">{c.mobile}</td>
-              <td className="p-3 text-gray-600">
-                {
-                  requests.filter(
-                    (r) => r.candidate_id === c.id && r.status === "completed"
-                  ).length
-                }
-                /{requests.filter((r) => r.candidate_id === c.id).length} complete
-              </td>
-              <td className="p-3 text-xs text-gray-500">
-                {c.created_at
-                  ? new Date(c.created_at as string).toLocaleDateString("en-GB")
-                  : "-"}
-              </td>
-<td className="p-3 text-right flex items-center justify-end gap-3">
-  {/* View / Hide button stays for all users */}
-  <button
-    onClick={() => setExpanded((prev) => (prev === c.id ? null : c.id))}
-    className="text-blue-600 hover:underline"
-  >
-    {expanded === c.id ? "Hide" : "View"}
-  </button>
-
-  {/* ✅ Archive / Unarchive buttons — managers & admins only */}
-  {canManage && (
-    <>
-      {!c.is_archived ? (
+    {/* Archive / Unarchive (manager/admin only) */}
+    {canManage && (
+      !c.is_archived ? (
         <button
           onClick={() => handleArchiveCandidate(c.id, c.full_name)}
           className="text-red-600 hover:underline"
@@ -517,42 +654,147 @@ return (
         >
           Unarchive
         </button>
-      )}
-    </>
-  )}
+      )
+    )}
+  </div>
 </td>
 
+                  </tr>
 
+                  {/* Expanded candidate details */}
+                  {expanded === c.id && (
+                    <tr className="bg-gray-50 border-b">
+                      <td colSpan={6} className="p-4">
+                        <CandidateDetails
+                          candidate={c}
+                          role={role}
+                          companyId={companyId}
+                          referees={referees.filter((r) => r.candidate_id === c.id)}
+                          requests={requests.filter((r) => r.candidate_id === c.id)}
+                          onRefresh={async () => {
+                            const { data } = await supabase
+                              .from("reference_requests")
+                              .select("*");
+                            if (data) setRequests(data);
+                          }}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
 
-            </tr>
+      {/* Add Candidate Modal */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 relative animate-fadeIn">
+            <h2 className="text-xl font-semibold text-slate-900 mb-4">
+              Add New Candidate
+            </h2>
 
-            {/* Expanded candidate details directly below each candidate */}
-            {expanded === c.id && (
-              <tr className="bg-gray-50 border-b">
-                <td colSpan={6} className="p-4">
-                  <CandidateDetails
-                    candidate={c}
-                    role={role}
-                    companyId={companyId}
-                    referees={referees.filter((r) => r.candidate_id === c.id)}
-                    requests={requests.filter((r) => r.candidate_id === c.id)}
-                    onRefresh={async () => {
-                      const { data } = await supabase
-                        .from("reference_requests")
-                        .select("*");
-                      if (data) setRequests(data);
-                    }}
-                  />
-                </td>
-              </tr>
-            )}
-          </React.Fragment>
-        ))}
-      </tbody>
-    </table>
-  )}
-</div>
+            <form onSubmit={handleAddCandidate} className="space-y-4">
+              {/* Full name */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700">
+                  Full name
+                </label>
+                <input
+                  type="text"
+                  value={newCandidate.full_name}
+                  onChange={(e) =>
+                    setNewCandidate({ ...newCandidate, full_name: e.target.value })
+                  }
+                  className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g. Alex Johnson"
+                  required
+                />
+              </div>
 
+              {/* Email */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={newCandidate.email}
+                  onChange={(e) =>
+                    setNewCandidate({ ...newCandidate, email: e.target.value })
+                  }
+                  className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="alex@example.com"
+                  required
+                />
+              </div>
+
+              {/* Mobile */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700">
+                  Mobile (optional)
+                </label>
+                <input
+                  type="tel"
+                  value={newCandidate.mobile}
+                  onChange={(e) =>
+                    setNewCandidate({ ...newCandidate, mobile: e.target.value })
+                  }
+                  className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="07..."
+                />
+              </div>
+
+              {/* Reference Template */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700">
+                  Reference Type
+                </label>
+                <select
+                  value={newCandidate.template_id || ""}
+                  onChange={(e) =>
+                    setNewCandidate({ ...newCandidate, template_id: e.target.value })
+                  }
+                  className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select reference type</option>
+                  {templates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+
+                {newCandidate.template_id && (
+                  <p className="mt-2 text-xs text-slate-500 leading-snug">
+                    {templates.find((t) => t.id === newCandidate.template_id)?.description ||
+                      "Select a template to view its details."}
+                  </p>
+                )}
+              </div>
+
+              {/* Buttons */}
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setShowModal(false)}
+                  className="px-4 py-2 text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-100 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow transition"
+                >
+                  Save
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   </div>
 );

@@ -2,12 +2,17 @@ export type Candidate = {
   id: string;
   full_name: string;
   email: string;
-  mobile: string;
+  mobile?: string;
   created_at?: string;
   created_by?: string;
-  is_archived?: boolean;        
-  archived_by?: string | null;  
-  archived_at?: string | null;  
+  is_archived?: boolean;
+  archived_by?: string | null;
+  archived_at?: string | null;
+  consent_token?: string | null;
+  consent_status?: "pending" | "granted" | "declined" | null;
+  status?: "active" | "archived" | "awaiting_consent" | null;
+  template_id?: string | null;
+
 
 };
 
