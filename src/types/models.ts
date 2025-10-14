@@ -12,6 +12,8 @@ export type Candidate = {
   consent_status?: "pending" | "granted" | "declined" | null;
   status?: "active" | "archived" | "awaiting_consent" | null;
   template_id?: string | null;
+  email_status?: string | null;
+  last_invite_sent_at?: string | null;
 
 
 };

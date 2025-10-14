@@ -72,3 +72,31 @@ body {
 .refevo-btn:hover {
   filter: brightness(1.1);
 }
+
+/* ─── Refevo Row Flash Animations ─────────────────────────────── */
+
+@keyframes fadeGreen {
+  0% {
+    background-color: #dcfce7; /* green-100 */
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+@keyframes fadeYellow {
+  0% {
+    background-color: #fef9c3; /* yellow-100 */
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.animate-fade-green {
+  animation: fadeGreen 2s ease-out forwards;
+}
+
+.animate-fade-yellow {
+  animation: fadeYellow 2s ease-out forwards;
+}

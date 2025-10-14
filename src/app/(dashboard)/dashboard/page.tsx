@@ -11,6 +11,7 @@ import { customAlphabet } from "nanoid";
 
 
 
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const ukToE164 = (mobile: string) =>
   /^07\d{9}$/.test(mobile) ? "+44" + mobile.slice(1) : mobile;
@@ -44,13 +45,14 @@ export default function DashboardPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const [showModal, setShowModal] = useState(false);
+  const [sending, setSending] = useState(false);
   const [newCandidate, setNewCandidate] = useState({
     full_name: "",
     email: "",
     mobile: "",
     template_id: "",
   });
-  const [sending, setSending] = useState(false);
+  
 const [sortBy, setSortBy] = useState<
   "created_desc" | "created_asc" | "name_asc" | "name_desc"
 >("created_desc");
@@ -63,6 +65,10 @@ const nano = customAlphabet("123456789ABCDEFGHJKLMNPQRSTUVWXYZ", 20);
 const [templates, setTemplates] = useState<
   { id: string; name: string; description?: string | null }[]
 >([]);
+const [adding, setAdding] = useState(false);
+
+// Track recently changed or new candidates for highlight animation
+const [highlightedRows, setHighlightedRows] = useState<Record<string, "update" | "new">>({});
 
 
 
@@ -126,10 +132,11 @@ useEffect(() => {
       if (!cancelled) {
         const [cands, refs, reqs, tmpls] = await Promise.all([
           supabase
-            .from("candidates")
-            .select(
-              "id, full_name, email, mobile, created_at, created_by, is_archived, archived_by, archived_at"
-            )
+  .from("candidates")
+  .select(
+    "id, full_name, email, mobile, created_at, created_by, is_archived, archived_by, archived_at, email_status"
+  )
+
             .order("created_at", { ascending: false }),
           supabase.from("referees").select("*"),
           supabase.from("reference_requests").select("*"),
@@ -169,6 +176,63 @@ useEffect(() => {
   };
 }, [router]);
 
+// ── Live Realtime Updates for Candidate Status ─────────────────────────────
+useEffect(() => {
+  if (!userId) return;
+
+  console.log("⚡️ Subscribing to live candidate updates...");
+
+  const channel = supabase
+    .channel("realtime:candidates")
+    // When a record is updated (e.g. email_status changed)
+    .on(
+      "postgres_changes",
+      { event: "UPDATE", schema: "public", table: "candidates" },
+      (payload) => {
+        const updated = payload.new as Candidate;
+        console.log("📡 Candidate updated:", updated);
+
+        setCandidates((prev) =>
+          prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c))
+        );
+
+        // Flash green highlight for updated row
+        setHighlightedRows((prev) => ({ ...prev, [updated.id]: "update" }));
+        setTimeout(() => {
+          setHighlightedRows((prev) => {
+            const { [updated.id]: _, ...rest } = prev;
+            return rest;
+          });
+        }, 2000);
+      }
+    )
+    // When a new record is inserted
+    .on(
+      "postgres_changes",
+      { event: "INSERT", schema: "public", table: "candidates" },
+      (payload) => {
+        const newCandidate = payload.new as Candidate;
+        console.log("🆕 New candidate added:", newCandidate);
+
+        setCandidates((prev) => [newCandidate, ...prev]);
+
+        // Flash yellow highlight for new row
+        setHighlightedRows((prev) => ({ ...prev, [newCandidate.id]: "new" }));
+        setTimeout(() => {
+          setHighlightedRows((prev) => {
+            const { [newCandidate.id]: _, ...rest } = prev;
+            return rest;
+          });
+        }, 2000);
+      }
+    )
+    .subscribe();
+
+  return () => {
+    console.log("🧹 Unsubscribing from candidate updates");
+    supabase.removeChannel(channel);
+  };
+}, [userId]);
 
   
 
@@ -194,93 +258,104 @@ const toggleExpand = (id: string) => {
   const candidateRequests = (id: string) =>
     requests.filter((r) => r.candidate_id === id);
 
-  const handleAddCandidate = async (e: React.FormEvent) => {
+const handleAddCandidate = async (e: React.FormEvent) => {
   e.preventDefault();
   if (!newCandidate.full_name || !newCandidate.email) return;
 
+  setAdding(true); // start loading
   const consentToken = nano();
-console.log("Submitting candidate:", newCandidate);
-
-  const { error } = await supabase.from("candidates").insert([
-    {
-      full_name: newCandidate.full_name,
-      email: newCandidate.email,
-      mobile: ukToE164(newCandidate.mobile),
-      created_by: userId,
-      consent_token: consentToken,
-      status: "awaiting_consent",
-      consent_status: "pending",
-      template_id: newCandidate.template_id?.length ? newCandidate.template_id : null,
-
-    },
-  ]);
-
-  // ── Resend Invite ─────────────────────────────────────────────────────────────
-const handleResendInvite = async (candidate: Candidate) => {
-  if (!candidate.email || !candidate.full_name) {
-    toast.error("Missing candidate info");
-    return;
-  }
 
   try {
-    // use existing token or create a new one if it's missing
-    const token = candidate.consent_token || nano();
+    // ── 1. Insert candidate ───────────────────────────────
+    const { data: inserted, error } = await supabase
+      .from("candidates")
+      .insert([
+        {
+          full_name: newCandidate.full_name,
+          email: newCandidate.email,
+          mobile: ukToE164(newCandidate.mobile),
+          created_by: userId,
+          consent_token: consentToken,
+          status: "awaiting_consent",
+          consent_status: "pending",
+          template_id: newCandidate.template_id || null,
+        },
+      ])
+      .select()
+      .single();
 
-    const { data, error } = await supabase.functions.invoke("send-consent-email", {
-      body: {
-        name: candidate.full_name,
-        email: candidate.email,
-        consent_token: token,          // ✅ match the DB key name
-        companyName: "Appetite4Work",  // optional
-      },
+    if (error) {
+      console.error("❌ DB insert error:", error);
+      toast.error("Error adding candidate");
+      return;
+    }
+
+    console.log("✅ Inserted candidate:", inserted);
+
+    // ── 2. Send consent email ─────────────────────────────
+    const { data: emailResponse, error: emailError } =
+      await supabase.functions.invoke("send-consent-email", {
+        body: {
+          name: inserted.full_name,
+          email: inserted.email,
+          consent_token: inserted.consent_token,
+          companyName: settings?.company_name || "Refevo",
+        },
+      });
+
+    if (emailError) {
+      console.error("Failed to send consent email:", emailError);
+      toast.error("Candidate added, but email not sent");
+    } else {
+      console.log("📧 Consent email sent successfully:", emailResponse);
+      toast.success("Candidate added successfully");
+
+      // 🟩 Update candidate email status to 'sent'
+const { error: updateError } = await supabase
+  .from("candidates")
+  .update({ email_status: "sent" })
+  .eq("id", inserted.id);
+
+if (updateError) {
+  console.error("❌ Failed to set email_status to sent:", updateError);
+} else {
+  console.log("📬 Email status set to 'sent' for:", inserted.id);
+}
+
+      await supabase
+        .from("candidates")
+        .update({ email_status: "sent" })
+        .eq("id", inserted.id);
+    }
+
+    // ── 3. Refresh list ───────────────────────────────
+    const { data: refreshed, error: refreshError } = await supabase
+      .from("candidates")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (refreshError) {
+      console.error("❌ Error refreshing candidates:", refreshError);
+    } else if (refreshed) {
+      setCandidates(refreshed);
+    }
+
+    // ── 4. Reset modal form ───────────────────────────────
+    setNewCandidate({
+      full_name: "",
+      email: "",
+      mobile: "",
+      template_id: "",
     });
-
-    if (error) throw error;
-
-    toast.success("Consent email re-sent");
-    console.log("📧 Resent invite:", data);
+    setShowModal(false);
   } catch (err) {
-    console.error("Resend failed:", err);
-    toast.error("Failed to resend invite");
+    console.error("Unexpected error in handleAddCandidate:", err);
+    toast.error("Something went wrong while adding candidate");
+  } finally {
+    // ✅ Always reset loading state even if something fails
+    setAdding(false);
   }
 };
-
-
-
-;
-  if (error) {
-    toast.error("Error adding candidate");
-    console.error(error);
-    return;
-  }
-
-  // ✅ Send combined consent + referee email
-  try {
-    await supabase.functions.invoke("send-consent-email", {
-      body: {
-        name: newCandidate.full_name,
-        email: newCandidate.email,
-        consentToken,
-      },
-    });
-    console.log("📧 Consent + referee invite email sent");
-  } catch (err) {
-    console.error("Failed to send consent email:", err);
-    toast.error("Candidate added, but email not sent");
-  }
-
-  toast.success("Candidate added!");
-  setShowModal(false);
-  setNewCandidate({ full_name: "", email: "", mobile: "", template_id: "" });
-
-  // (B) refresh the list
-  const { data: refreshed } = await supabase
-    .from("candidates")
-    .select("*")
-    .order("created_at", { ascending: false });
-  if (refreshed) setCandidates(refreshed);
-};
-
 
   // ── Archive Candidate ───────────────────────────────────────────────
 const handleArchiveCandidate = async (candidateId: string, name: string) => {
@@ -603,9 +678,40 @@ return (
             <tbody>
               {filteredCandidates.map((c) => (
                 <React.Fragment key={c.id}>
-                  <tr className="border-b hover:bg-gray-50">
+ <tr
+  className={`border-b ${
+    highlightedRows[c.id] === "update"
+      ? "animate-fade-green"
+      : highlightedRows[c.id] === "new"
+      ? "animate-fade-yellow"
+      : "hover:bg-gray-50"
+  }`}
+>
+
+
                     <td className="p-3">{c.full_name}</td>
-                    <td className="p-3">{c.email}</td>
+                    <td className="p-3">
+  {c.email}
+
+  {c.email_status === "sent" && (
+    <span className="ml-2 text-xs text-teal-600 font-medium">
+      📤 sent
+    </span>
+  )}
+
+  {c.email_status === "delivered" && (
+    <span className="ml-2 text-xs text-green-600 font-medium">
+      ✅ delivered
+    </span>
+  )}
+
+  {c.email_status === "bounced" && (
+    <span className="ml-2 text-xs text-red-600 font-medium">
+      ⚠️ bounced
+    </span>
+  )}
+</td>
+
                     <td className="p-3 text-gray-500">{c.mobile}</td>
                     <td className="p-3 text-gray-600">
                       {
@@ -784,12 +890,18 @@ return (
                 >
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow transition"
-                >
-                  Save
-                </button>
+<button
+  type="submit"
+  disabled={adding}
+  className={`px-4 py-2 rounded-lg shadow transition font-medium ${
+    adding
+      ? "bg-blue-400 cursor-not-allowed text-white"
+      : "bg-blue-600 hover:bg-blue-700 text-white"
+  }`}
+>
+  {adding ? "Sending…" : "Save"}
+</button>
+
               </div>
             </form>
           </div>
