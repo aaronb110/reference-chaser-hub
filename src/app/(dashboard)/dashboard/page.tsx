@@ -8,6 +8,7 @@ import CandidateDetails from "./components/CandidateDetails";
 import type { Candidate, Referee, Request } from "@/types/models";
 import React from "react";
 import { customAlphabet } from "nanoid";
+import StatusBadge from "@/components/StatusBadge";
 
 
 
@@ -66,6 +67,11 @@ const [templates, setTemplates] = useState<
   { id: string; name: string; description?: string | null }[]
 >([]);
 const [adding, setAdding] = useState(false);
+
+// Pagination
+const [currentPage, setCurrentPage] = useState(1);
+const pageSize = 15; // 👈 change to 20 if preferred
+
 
 // Track recently changed or new candidates for highlight animation
 const [highlightedRows, setHighlightedRows] = useState<Record<string, "update" | "new">>({});
@@ -664,134 +670,232 @@ return (
             </p>
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-gray-100 text-gray-700">
-              <tr>
-                <th className="py-3 px-4 font-medium">Candidate</th>
-                <th className="py-3 px-4 font-medium">Email</th>
-                <th className="py-3 px-4 font-medium">Mobile</th>
-                <th className="py-3 px-4 font-medium">Progress</th>
-                <th className="py-3 px-4 font-medium">Added</th>
-                <th className="py-3 px-4 font-medium text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredCandidates.map((c) => (
-                <React.Fragment key={c.id}>
- <tr
-  className={`border-b ${
+         <table className="w-full text-sm table-auto border-collapse text-left">
+
+
+<thead className="bg-gray-100 text-gray-700 border-b border-gray-200">
+  <tr>
+    <th className="px-4 py-3 font-semibold text-sm text-left w-[22%]">Candidate</th>
+    <th className="px-4 py-3 font-semibold text-sm text-left w-[25%]">Email</th>
+    <th className="px-4 py-3 font-semibold text-sm text-left w-[15%]">Mobile</th>
+    <th className="px-4 py-3 font-semibold text-sm text-left w-[18%]">Progress</th>
+    <th className="px-4 py-3 font-semibold text-sm text-center w-[14%]">Added</th>
+    <th className="px-4 py-3 font-semibold text-sm text-right w-[10%]">Action</th>
+
+  </tr>
+</thead>
+
+
+<tbody className="[&>tr:nth-child(even)]:bg-gray-50 divide-y divide-gray-100">
+
+
+ {filteredCandidates
+  .slice((currentPage - 1) * pageSize, currentPage * pageSize)
+  .map((c) => (
+
+    <React.Fragment key={c.id}>
+<tr
+  className={`transition-colors hover:bg-blue-50/40 ${
     highlightedRows[c.id] === "update"
-      ? "animate-fade-green"
+      ? "bg-green-50"
       : highlightedRows[c.id] === "new"
-      ? "animate-fade-yellow"
-      : "hover:bg-gray-50"
+      ? "bg-yellow-50"
+      : ""
   }`}
 >
 
+        <td className="px-4 py-3 align-middle text-gray-800 font-medium truncate">
+          {c.full_name || "-"}
+        </td>
 
-                    <td className="p-3">{c.full_name}</td>
-                    <td className="p-3">
-  {c.email}
-
-  {c.email_status === "sent" && (
-    <span className="ml-2 text-xs text-teal-600 font-medium">
-      📤 sent
-    </span>
-  )}
-
-  {c.email_status === "delivered" && (
-    <span className="ml-2 text-xs text-green-600 font-medium">
-      ✅ delivered
-    </span>
-  )}
-
-  {c.email_status === "bounced" && (
-    <span className="ml-2 text-xs text-red-600 font-medium">
-      ⚠️ bounced
-    </span>
-  )}
-</td>
-
-                    <td className="p-3 text-gray-500">{c.mobile}</td>
-                    <td className="p-3 text-gray-600">
-                      {
-                        requests.filter(
-                          (r) => r.candidate_id === c.id && r.status === "completed"
-                        ).length
-                      }
-                      /{requests.filter((r) => r.candidate_id === c.id).length} complete
-                    </td>
-                    <td className="p-3 text-xs text-gray-500">
-                      {c.created_at
-                        ? new Date(c.created_at as string).toLocaleDateString("en-GB")
-                        : "-"}
-                    </td>
-<td className="p-3 text-right">
-  <div className="flex items-center justify-end gap-3">
-    {/* View / Hide */}
-    <button
-      onClick={() => setExpanded((prev) => (prev === c.id ? null : c.id))}
-      className="text-blue-600 hover:underline"
-    >
-      {expanded === c.id ? "Hide" : "View"}
-    </button>
-
-    {/* Resend Invite */}
-    <button
-      onClick={() => handleResendInvite(c)}
-      className="text-teal-600 hover:underline"
-    >
-      Resend Invite
-    </button>
-
-    {/* Archive / Unarchive (manager/admin only) */}
-    {canManage && (
-      !c.is_archived ? (
-        <button
-          onClick={() => handleArchiveCandidate(c.id, c.full_name)}
-          className="text-red-600 hover:underline"
-        >
-          Archive
-        </button>
-      ) : (
-        <button
-          onClick={() => handleUnarchiveCandidate(c.id, c.full_name)}
-          className="text-teal-700 hover:underline"
-        >
-          Unarchive
-        </button>
-      )
-    )}
+<td className="px-4 py-3 align-middle w-[25%]">
+  <div className="flex items-center justify-between gap-2">
+    <span className="truncate text-gray-700">{c.email}</span>
+    <div className="flex-shrink-0">
+      <StatusBadge status={c.email_status || "unknown"} />
+    </div>
   </div>
 </td>
 
-                  </tr>
 
-                  {/* Expanded candidate details */}
-                  {expanded === c.id && (
-                    <tr className="bg-gray-50 border-b">
-                      <td colSpan={6} className="p-4">
-                        <CandidateDetails
-                          candidate={c}
-                          role={role}
-                          companyId={companyId}
-                          referees={referees.filter((r) => r.candidate_id === c.id)}
-                          requests={requests.filter((r) => r.candidate_id === c.id)}
-                          onRefresh={async () => {
-                            const { data } = await supabase
-                              .from("reference_requests")
-                              .select("*");
-                            if (data) setRequests(data);
-                          }}
-                        />
-                      </td>
-                    </tr>
-                  )}
-                </React.Fragment>
+        <td className="px-4 py-3 align-middle text-gray-600 truncate">
+          {c.mobile || "-"}
+        </td>
+
+{/* Progress */}
+<td className="px-4 py-3 align-middle text-gray-600 w-[18%]">
+  {
+    requests.filter(
+      (r) => r.candidate_id === c.id && r.status === "completed"
+    ).length
+  }
+  /
+  {requests.filter((r) => r.candidate_id === c.id).length} complete
+</td>
+
+{/* Added */}
+<td className="px-4 py-3 align-middle text-xs text-gray-500 whitespace-nowrap text-center w-[14%]">
+  {c.created_at
+    ? new Date(c.created_at as string).toLocaleDateString("en-GB")
+    : "-"}
+</td>
+
+
+
+        <td className="px-4 py-3 align-middle text-right">
+          <div className="flex items-center justify-end gap-3 space-x-3">
+            <button
+              onClick={() => setExpanded((prev) => (prev === c.id ? null : c.id))}
+              className="text-blue-600 hover:underline text-sm"
+            >
+              {expanded === c.id ? "Hide" : "View"}
+            </button>
+
+            <button
+              onClick={() => handleResendInvite(c)}
+              className="text-teal-600 hover:underline text-sm"
+            >
+              Resend
+            </button>
+
+            {canManage &&
+              (!c.is_archived ? (
+                <button
+                  onClick={() => handleArchiveCandidate(c.id, c.full_name)}
+                  className="text-red-600 hover:underline text-sm"
+                >
+                  Archive
+                </button>
+              ) : (
+                <button
+                  onClick={() => handleUnarchiveCandidate(c.id, c.full_name)}
+                  className="text-teal-700 hover:underline text-sm"
+                >
+                  Unarchive
+                </button>
               ))}
-            </tbody>
+          </div>
+        </td>
+      </tr>
+
+      {expanded === c.id && (
+        <tr className="bg-gray-50">
+          <td colSpan={6} className="p-4">
+            <CandidateDetails
+              candidate={c}
+              role={role}
+              companyId={companyId}
+              referees={referees.filter((r) => r.candidate_id === c.id)}
+              requests={requests.filter((r) => r.candidate_id === c.id)}
+              onRefresh={async () => {
+                const { data } = await supabase
+                  .from("reference_requests")
+                  .select("*");
+                if (data) setRequests(data);
+              }}
+            />
+          </td>
+        </tr>
+      )}
+    </React.Fragment>
+  ))}
+</tbody>
+
           </table>
         )}
+
+ {/* Pagination Controls */}
+{filteredCandidates.length > pageSize && (
+  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between px-6 py-4 border-t border-gray-200 bg-gray-50 text-sm gap-3">
+    <p className="text-gray-600">
+      Showing{" "}
+      <span className="font-medium">
+        {(currentPage - 1) * pageSize + 1}
+      </span>{" "}
+      –{" "}
+      <span className="font-medium">
+        {Math.min(currentPage * pageSize, filteredCandidates.length)}
+      </span>{" "}
+      of{" "}
+      <span className="font-medium">{filteredCandidates.length}</span> candidates
+    </p>
+
+    {/* Page Numbers */}
+    <div className="flex items-center justify-center gap-1">
+      <button
+        onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+        disabled={currentPage === 1}
+        className={`px-3 py-1 rounded-md border text-sm font-medium transition ${
+          currentPage === 1
+            ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+            : "bg-white hover:bg-gray-100 text-gray-700 border-gray-300"
+        }`}
+      >
+        ← Prev
+      </button>
+
+      {/* Page buttons */}
+      {Array.from(
+        { length: Math.ceil(filteredCandidates.length / pageSize) },
+        (_, i) => i + 1
+      ).map((page) => {
+        // Show only up to 5 visible buttons around current page
+        if (
+          page === 1 ||
+          page === Math.ceil(filteredCandidates.length / pageSize) ||
+          (page >= currentPage - 2 && page <= currentPage + 2)
+        ) {
+          return (
+            <button
+              key={page}
+              onClick={() => setCurrentPage(page)}
+              className={`px-3 py-1 rounded-md border text-sm font-medium transition ${
+                currentPage === page
+                  ? "bg-[#00B3B0] text-white border-blue-600"
+                  : "bg-white text-gray-700 hover:bg-gray-100 border-gray-300"
+              }`}
+            >
+              {page}
+            </button>
+          );
+        } else if (
+          (page === currentPage - 3 && page > 1) ||
+          (page === currentPage + 3 &&
+            page < Math.ceil(filteredCandidates.length / pageSize))
+        ) {
+          return (
+            <span
+              key={`ellipsis-${page}`}
+              className="px-2 text-gray-400 select-none"
+            >
+              ...
+            </span>
+          );
+        }
+        return null;
+      })}
+
+      <button
+        onClick={() =>
+          setCurrentPage((p) =>
+            p * pageSize < filteredCandidates.length ? p + 1 : p
+          )
+        }
+        disabled={currentPage * pageSize >= filteredCandidates.length}
+        className={`px-3 py-1 rounded-md border text-sm font-medium transition ${
+          currentPage * pageSize >= filteredCandidates.length
+            ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+            : "bg-white hover:bg-gray-100 text-gray-700 border-gray-300"
+        }`}
+      >
+        Next →
+      </button>
+    </div>
+  </div>
+)}
+
+
+
       </div>
 
       {/* Add Candidate Modal */}

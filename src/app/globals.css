@@ -100,3 +100,12 @@ body {
 .animate-fade-yellow {
   animation: fadeYellow 2s ease-out forwards;
 }
+
+table {
+  border-spacing: 0;
+  border-collapse: collapse;
+}
+
+th, td {
+  vertical-align: middle;
+}
