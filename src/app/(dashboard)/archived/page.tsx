@@ -140,7 +140,7 @@ export default function ArchivePage() {
                                 const referee = getReferee(req.referee_id);
                                 return (
                                   <tr key={req.id} className="border-b hover:bg-gray-50 transition">
-                                    <td className="p-3 w-1/6">{referee?.full_name || "—"}</td>
+                                    <td className="p-3 w-1/6">{referee?.name || "—"}</td>
                                     <td className="p-3 w-1/6">{renderStatusBadge(req.status)}</td>
                                     <td className="p-3 w-1/6">{new Date(req.created_at).toLocaleString()}</td>
                                     <td className="p-3 w-1/6 text-center">
