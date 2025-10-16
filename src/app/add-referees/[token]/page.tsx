@@ -11,7 +11,7 @@ type CandidateRow = {
   consent_token: string;
   reference_type?: string;
   reference_years_required?: number;
-  reference_config_id?: string | null;
+  template_id?: string | null; // ✅ fixed field name
   config?: any;
 };
 
@@ -33,11 +33,11 @@ export default function AddRefereesPage() {
       const cleanToken = token?.toString().trim();
       console.log("🧠 Checking consent_token:", `"${cleanToken}"`);
 
-      // 1) Get the candidate basics
+      // 1️⃣ Get candidate basics
       const { data: cand, error: candErr } = await supabase
         .from("candidates")
         .select(
-          "id, full_name, consent_token, reference_type, reference_years_required, reference_config_id"
+          "id, full_name, consent_token, reference_type, reference_years_required, template_id"
         )
         .eq("consent_token", cleanToken)
         .maybeSingle();
@@ -56,30 +56,30 @@ export default function AddRefereesPage() {
 
       setError(null);
 
-      // 2) Config lookup — only if the field exists and looks valid
+      // 2️⃣ Template lookup — only if template_id exists
       let config: any = null;
-      if (cand.reference_config_id && typeof cand.reference_config_id === "string") {
+      if (cand.template_id && typeof cand.template_id === "string") {
         const { data: cfg, error: cfgErr } = await supabase
           .from("reference_templates")
           .select("id, required_refs, ref_types, description")
-          .eq("id", cand.reference_config_id.trim())
+          .eq("id", cand.template_id.trim())
           .maybeSingle();
 
         if (cfgErr) {
           console.error("⚠️ Template lookup error:", cfgErr);
         } else if (!cfg) {
-          console.warn("⚠️ No template found for id:", cand.reference_config_id);
+          console.warn("⚠️ No template found for id:", cand.template_id);
         } else {
           console.log("✅ Template loaded:", cfg);
           config = cfg;
         }
       }
 
-      // Store both in state
+      // 3️⃣ Store both in state
       const fullCandidate = { ...(cand as CandidateRow), config };
-      setCandidate(fullCandidate as CandidateRow & { config?: any });
+      setCandidate(fullCandidate);
 
-      // Initialise referees once config is known
+      // 4️⃣ Initialise referee form
       if (config?.ref_types?.length) {
         setReferees(config.ref_types.map((t: string) => ({ name: "", email: "", type: t })));
       }
