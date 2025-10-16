@@ -4,30 +4,46 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import toast from "react-hot-toast";
+import { useSearchParams } from "next/navigation";
 
 export default function CandidateConsentPage() {
-  const { token } = useParams<{ token: string }>();
+  const searchParams = useSearchParams();
+const token = searchParams.get("token");
   const router = useRouter();
 
   const [candidate, setCandidate] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function loadCandidate() {
-      const { data, error } = await supabase
-        .from("candidates")
-        .select("*")
-        .eq("consent_token", token)
-        .maybeSingle();
+async function loadCandidate() {
+      console.log("🔌 Supabase URL:", process.env.NEXT_PUBLIC_SUPABASE_URL);
+    console.log("🔑 Anon key present:", !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+  console.log("🧠 Token from URL:", token);
 
-      if (error) {
-        console.error(error);
-        toast.error("Error loading candidate");
-      } else {
-        setCandidate(data);
-      }
-      setLoading(false);
+  try {
+    const { data, error } = await supabase
+      .from("candidates")
+      .select("*")
+      .eq("consent_token", token)
+      .maybeSingle();
+
+    console.log("✅ Data:", data, "❌ Error:", error);
+
+    if (error) {
+      toast.error("Error loading candidate");
+    } else if (!data) {
+      toast.error("No candidate found for this token");
+    } else {
+      setCandidate(data);
     }
+  } catch (err) {
+    console.error("Unexpected error:", err);
+    toast.error("Unexpected error loading candidate");
+  } finally {
+    setLoading(false);
+  }
+}
+
 
     if (token) loadCandidate();
   }, [token]);
@@ -36,45 +52,36 @@ export default function CandidateConsentPage() {
   if (!candidate)
     return <div className="p-8 text-center text-red-600">Invalid or expired link</div>;
 
-async function handleConsent(decision: "granted" | "declined") {
+async function handleConsent(decision: "granted" | "declined"): Promise<void> {
   const { error } = await supabase
     .from("candidates")
     .update({
       consent_status: decision,
       status: decision === "granted" ? "active" : "archived",
+      consent_at: decision === "granted" ? new Date().toISOString() : null,
     })
     .eq("id", candidate.id);
 
   if (error) {
-    console.error(error);
+    console.error("❌ Failed to update consent:", error);
     toast.error("Failed to update consent");
-  } else {
-    if (decision === "granted") {
-      try {
-        await supabase.functions.invoke("send-referee-invite", {
-          body: {
-            candidateId: candidate.id,
-            email: candidate.email,
-            name: candidate.full_name,
-          },
-        });
-        console.log("✅ Referee invite triggered for", candidate.email);
-      } catch (err) {
-        console.error("Failed to trigger referee invite", err);
-      }
-    }
+    return;
+  }
 
-    toast.success(
-      decision === "granted"
-        ? "Thank you! Consent granted."
-        : "Consent declined."
-    );
+  toast.success(
+    decision === "granted"
+      ? "Thank you! Consent granted."
+      : "Consent declined."
+  );
+
+  if (decision === "granted") {
+    router.push(`/add-referees/${candidate.consent_token}`);
+  } else {
     router.push("/thank-you");
   }
 }
 
 
-  
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50">

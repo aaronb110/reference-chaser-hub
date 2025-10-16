@@ -108,6 +108,8 @@ useEffect(() => {
       }
 
       // ── Profile ─────────────────────────────────────────────────────────────
+      
+      
       const { data: profile, error: profileErr } = await supabase
         .from("profiles")
         .select("role, company_id")
@@ -137,13 +139,14 @@ useEffect(() => {
       // ── Bulk data fetch (candidates, referees, requests, templates) ─────────
       if (!cancelled) {
         const [cands, refs, reqs, tmpls] = await Promise.all([
-          supabase
+          
+supabase
   .from("candidates")
   .select(
-    "id, full_name, email, mobile, created_at, created_by, is_archived, archived_by, archived_at, email_status"
+    "id, full_name, email, mobile, created_at, created_by, is_archived, archived_by, archived_at, email_status, status, referee_count, updated_at"
   )
+  .order("created_at", { ascending: false }),
 
-            .order("created_at", { ascending: false }),
           supabase.from("referees").select("*"),
           supabase.from("reference_requests").select("*"),
           supabase
@@ -151,6 +154,9 @@ useEffect(() => {
             .select("id, name, description")
             .order("name", { ascending: true }),
         ]);
+
+console.log("🧩 Candidates fetched:", cands.data, cands.error);
+
 
         if (cands.data) setCandidates(cands.data as Candidate[]);
         if (refs.data) setReferees(refs.data as Referee[]);
@@ -678,7 +684,10 @@ return (
     <th className="px-4 py-3 font-semibold text-sm text-left w-[22%]">Candidate</th>
     <th className="px-4 py-3 font-semibold text-sm text-left w-[25%]">Email</th>
     <th className="px-4 py-3 font-semibold text-sm text-left w-[15%]">Mobile</th>
-    <th className="px-4 py-3 font-semibold text-sm text-left w-[18%]">Progress</th>
+    <th className="px-4 py-3 font-semibold text-sm text-left w-[18%]">
+  Status / Referees
+</th>
+
     <th className="px-4 py-3 font-semibold text-sm text-center w-[14%]">Added</th>
     <th className="px-4 py-3 font-semibold text-sm text-right w-[10%]">Action</th>
 
@@ -722,16 +731,18 @@ return (
           {c.mobile || "-"}
         </td>
 
-{/* Progress */}
-<td className="px-4 py-3 align-middle text-gray-600 w-[18%]">
-  {
-    requests.filter(
-      (r) => r.candidate_id === c.id && r.status === "completed"
-    ).length
-  }
-  /
-  {requests.filter((r) => r.candidate_id === c.id).length} complete
+{/* Status / Referees */}
+<td className="px-4 py-3 align-middle text-gray-700 w-[18%]">
+  <div className="flex flex-col">
+    <span className="font-medium capitalize">
+      {c.status?.replaceAll("_", " ") || "—"}
+    </span>
+    <span className="text-xs text-gray-500">
+      {c.referee_count ?? 0} referee{(c.referee_count ?? 0) === 1 ? "" : "s"}
+    </span>
+  </div>
 </td>
+
 
 {/* Added */}
 <td className="px-4 py-3 align-middle text-xs text-gray-500 whitespace-nowrap text-center w-[14%]">

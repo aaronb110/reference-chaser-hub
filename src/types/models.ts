@@ -10,13 +10,23 @@ export type Candidate = {
   archived_at?: string | null;
   consent_token?: string | null;
   consent_status?: "pending" | "granted" | "declined" | null;
-  status?: "active" | "archived" | "awaiting_consent" | null;
+  status?:
+    | "awaiting_consent"
+    | "consent_granted"
+    | "awaiting_referees"
+    | "referees_submitted"
+    | "references_in_progress"
+    | "references_completed"
+    | "consent_withdrawn"
+    | "archived"
+    | null;
   template_id?: string | null;
   email_status?: string | null;
   last_invite_sent_at?: string | null;
-
-
+  referee_count?: number | null;
+  updated_at?: string | null;
 };
+
 
 export type Referee = {
   id: string;

@@ -47,41 +47,57 @@ if (!email || !consent_token) {
 }
 
 
-    // ── Build Email ───────────────────────────────────────────
-    const link = `${SITE}/referees/start/${consent_token}`;
-    const subject = "Confirm consent & add your referees";
-    const html = `
-      <div style="font-family: 'Inter', Arial, sans-serif; background-color: #F8FAFC; padding: 32px;">
-        <div style="max-width: 600px; margin: 0 auto; background: #FFFFFF; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
-          <div style="background-color: #0A1A2F; padding: 24px 32px;">
-            <h1 style="color: #FFFFFF; font-size: 20px; margin: 0;">Refevo Reference Request</h1>
-          </div>
-          <div style="padding: 32px;">
-            <p style="font-size: 16px; color: #1E293B; margin-top: 0;">Hi <strong>${name}</strong>,</p>
-            <p style="font-size: 15px; color: #334155; line-height: 1.6;">
-              ${companyName ? companyName : "Your recruiter"} is using Refevo to collect your employment references.<br/>
-              Please confirm your consent and add your referee details — it only takes a minute.
-            </p>
-            <p style="text-align: center; margin: 32px 0;">
-              <a href="${link}" style="background: linear-gradient(135deg, #00B3B0 0%, #0A1A2F 100%);
-                  color: #ffffff; text-decoration: none; padding: 14px 28px;
-                  border-radius: 8px; font-weight: 600; font-size: 15px;
-                  display: inline-block;">Give consent & add referees</a>
-            </p>
-            <p style="font-size: 14px; color: #64748B; line-height: 1.5;">
-              Once you’ve given consent, you’ll be able to securely provide your referee details in one step.
-              We’ll notify your recruiter automatically when your information is received.
-            </p>
-            <hr style="border: none; border-top: 1px solid #E2E8F0; margin: 24px 0;">
-            <p style="font-size: 13px; color: #94A3B8;">This link is unique to you and will expire after 14 days for security.</p>
-          </div>
-          <div style="background-color: #F8FAFC; text-align: center; padding: 20px; font-size: 12px; color: #94A3B8;">
-            Powered by <strong style="color: #00B3B0;">Refevo</strong><br/>
-            <span style="font-size: 11px;">Automated reference checks made simple</span>
-          </div>
-        </div>
+// ── Build Email ───────────────────────────────────────────
+// Dynamically choose the base URL depending on environment
+const baseUrl = Deno.env.get("NEXT_PUBLIC_SITE_URL") || "http://localhost:3000";
+
+// Construct the full link to the candidate consent flow
+const link = `${baseUrl}/add-referees/${consent_token}`;
+
+
+const subject = "Confirm consent & add your referees";
+const html = `
+  <div style="font-family: 'Inter', Arial, sans-serif; background-color: #F8FAFC; padding: 32px;">
+    <div style="max-width: 600px; margin: 0 auto; background: #FFFFFF; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+      <div style="background-color: #0A1A2F; padding: 24px 32px;">
+        <h1 style="color: #FFFFFF; font-size: 20px; margin: 0;">Refevo Reference Request</h1>
       </div>
-    `;
+      <div style="padding: 32px;">
+        <p style="font-size: 16px; color: #1E293B; margin-top: 0;">Hi <strong>${name}</strong>,</p>
+        <p style="font-size: 15px; color: #334155; line-height: 1.6;">
+          ${companyName ? companyName : "Your recruiter"} is using Refevo to collect your employment references.<br/>
+          Please confirm your consent and add your referee details — it only takes a minute.
+        </p>
+        <p style="text-align: center; margin: 32px 0;">
+        <a href="${link}" 
+   style="background-color:#00B3B0; color:#ffffff;
+          text-decoration:none; padding:14px 28px;
+          border-radius:8px; font-weight:600;
+          font-size:15px; display:inline-block;">
+  Give consent & add referees
+</a>
+
+<p style="font-size:13px; color:#64748B; text-align:center; margin-top:16px;">
+  If the button above doesn’t work, copy and paste this link into your browser:<br/>
+  <a href="${link}" style="color:#00B3B0; word-break:break-all;">${link}</a>
+</p>
+
+
+        <p style="font-size: 14px; color: #64748B; line-height: 1.5;">
+          Once you’ve given consent, you’ll be able to securely provide your referee details in one step.
+          We’ll notify your recruiter automatically when your information is received.
+        </p>
+        <hr style="border: none; border-top: 1px solid #E2E8F0; margin: 24px 0;">
+        <p style="font-size: 13px; color: #94A3B8;">This link is unique to you and will expire after 14 days for security.</p>
+      </div>
+      <div style="background-color: #F8FAFC; text-align: center; padding: 20px; font-size: 12px; color: #94A3B8;">
+        Powered by <strong style="color: #00B3B0;">Refevo</strong><br/>
+        <span style="font-size: 11px;">Automated reference checks made simple</span>
+      </div>
+    </div>
+  </div>
+`;
+
 
     // ── Send via Resend ───────────────────────────────────────
     const res = await fetch("https://api.resend.com/emails", {
