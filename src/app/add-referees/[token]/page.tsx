@@ -58,12 +58,16 @@ export default function AddRefereesPage() {
 
       // 2️⃣ Template lookup — only if template_id exists
       let config: any = null;
-      if (cand.template_id && typeof cand.template_id === "string") {
-        const { data: cfg, error: cfgErr } = await supabase
-          .from("reference_templates")
-          .select("id, required_refs, ref_types, description")
-          .eq("id", cand.template_id.trim())
-          .maybeSingle();
+if (cand.template_id) {
+  const { data: cfg, error: cfgErr } = await supabase
+    .from("reference_templates")
+    .select("id, required_refs, ref_types, description")
+    .eq("id", cand.template_id)
+    .maybeSingle();
+
+    console.log("🔍 Looking up template with id:", cand.template_id);
+
+
 
         if (cfgErr) {
           console.error("⚠️ Template lookup error:", cfgErr);
