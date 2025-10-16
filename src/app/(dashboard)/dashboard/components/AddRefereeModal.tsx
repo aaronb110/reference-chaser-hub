@@ -4,6 +4,7 @@ import { useState } from "react";
 import toast from "react-hot-toast";
 import { supabase } from "@/lib/supabaseClient";
 import type { Candidate } from "@/types/models";
+import { trimAll, toTitleCaseName, normaliseEmail } from "../../../../utils/normalise";
 
 const ukToE164 = (mobile: string) =>
   /^07\d{9}$/.test(mobile) ? "+44" + mobile.slice(1) : mobile;
@@ -21,12 +22,13 @@ export default function AddRefereeModal({
 }) {
   const [full_name, setFullName] = useState("");
   const [email, setEmail] = useState("");
-  const [mobile, setMobile] = useState(""); // optional for now
+  const [mobile, setMobile] = useState("");
   const [relationship, setRelationship] = useState("");
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!full_name.trim() || !email.trim() || !relationship.trim()) {
       toast.error("Full name, email and relationship are required.");
       return;
@@ -52,25 +54,36 @@ export default function AddRefereeModal({
       return;
     }
 
-    const { error } = await supabase.from("referees").insert({
-      candidate_id: candidate.id,
-      full_name: full_name.trim(),
-      email: email.trim().toLowerCase(),
-      mobile: mobile ? ukToE164(mobile) : null,
-      relationship: relationship.trim(),
-      created_by: user.id,
-      company_id: companyId,
+    // 🔹 Normalise all inputs before saving
+    const cleaned = trimAll({
+      full_name,
+      email,
+      mobile,
+      relationship,
     });
 
+    const payload = {
+      candidate_id: candidate.id,
+      name: toTitleCaseName(cleaned.full_name), // ✅ Use "name" to match DB column
+      email: normaliseEmail(cleaned.email),
+      mobile: cleaned.mobile ? ukToE164(cleaned.mobile) : null,
+      relationship: cleaned.relationship,
+      created_by: user.id,
+      company_id: companyId,
+    };
+
+    console.log("🟢 Inserting referee payload:", payload);
+
+    const { error } = await supabase.from("referees").insert(payload);
+
     if (error) {
+      console.error("❌ Insert error:", error);
       toast.error(error.message);
       setSaving(false);
       return;
     }
 
-    // Optional: trigger consent email via RPC/Function later
-    await supabase.rpc('send_candidate_consent_email', { candidate_id: candidate.id });
-
+    toast.success("Referee added successfully");
     await onSaved();
     setSaving(false);
   };
@@ -104,7 +117,9 @@ export default function AddRefereeModal({
           </div>
 
           <div>
-            <label className="block text-sm font-medium">Mobile (UK) — optional (for SMS later)</label>
+            <label className="block text-sm font-medium">
+              Mobile (UK) — optional (for SMS later)
+            </label>
             <input
               className="w-full border rounded-lg px-3 py-2 mt-1"
               placeholder="07xxxxxxxxx"

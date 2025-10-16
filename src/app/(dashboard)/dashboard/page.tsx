@@ -9,6 +9,7 @@ import type { Candidate, Referee, Request } from "@/types/models";
 import React from "react";
 import { customAlphabet } from "nanoid";
 import StatusBadge from "@/components/StatusBadge";
+import { trimAll, toTitleCaseName, normaliseEmail } from "@/utils/normalise";
 
 
 
@@ -143,9 +144,10 @@ useEffect(() => {
 supabase
   .from("candidates")
   .select(
-    "id, full_name, email, mobile, created_at, created_by, is_archived, archived_by, archived_at, email_status, status, referee_count, updated_at"
+    "id, full_name, email, mobile, created_at, created_by, is_archived, archived_by, archived_at, email_status, status, referee_count, updated_at, consent_status, consent_at"
   )
   .order("created_at", { ascending: false }),
+
 
           supabase.from("referees").select("*"),
           supabase.from("reference_requests").select("*"),
@@ -278,23 +280,32 @@ const handleAddCandidate = async (e: React.FormEvent) => {
   const consentToken = nano();
 
   try {
-    // ── 1. Insert candidate ───────────────────────────────
-    const { data: inserted, error } = await supabase
-      .from("candidates")
-      .insert([
-        {
-          full_name: newCandidate.full_name,
-          email: newCandidate.email,
-          mobile: ukToE164(newCandidate.mobile),
-          created_by: userId,
-          consent_token: consentToken,
-          status: "awaiting_consent",
-          consent_status: "pending",
-          template_id: newCandidate.template_id || null,
-        },
-      ])
-      .select()
-      .single();
+// ── 1. Prepare and normalise candidate ───────────────────────────────
+const cleaned = trimAll({
+  full_name: newCandidate.full_name,
+  email: newCandidate.email,
+  mobile: newCandidate.mobile,
+});
+
+const candidatePayload = {
+  full_name: toTitleCaseName(cleaned.full_name),
+  email: normaliseEmail(cleaned.email),
+  mobile: cleaned.mobile ? ukToE164(cleaned.mobile) : null,
+  created_by: userId,
+  consent_token: consentToken,
+  status: "awaiting_consent",
+  consent_status: "pending",
+  template_id: newCandidate.template_id || null,
+};
+
+console.log("🧩 Normalised candidate payload:", candidatePayload);
+
+const { data: inserted, error } = await supabase
+  .from("candidates")
+  .insert([candidatePayload])
+  .select()
+  .single();
+
 
     if (error) {
       console.error("❌ DB insert error:", error);
@@ -796,8 +807,7 @@ return (
               candidate={c}
               role={role}
               companyId={companyId}
-              referees={referees.filter((r) => r.candidate_id === c.id)}
-              requests={requests.filter((r) => r.candidate_id === c.id)}
+
               onRefresh={async () => {
                 const { data } = await supabase
                   .from("reference_requests")

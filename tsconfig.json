@@ -14,10 +14,13 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
-    "baseUrl": ".",
+
+    // ✅ Base and path alias setup
+    "baseUrl": "src",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["*"]
     },
+
     "plugins": [
       {
         "name": "next"
@@ -34,9 +37,9 @@
 
   "exclude": [
     "node_modules",
-    "supabase/functions",      // 👈 Prevents Vercel from type-checking Deno code
-    "supabase/.temp",          // optional: Supabase build cache folder
-    "**/*.test.ts",            // optional: skip local tests
-    "**/*.spec.ts"             // optional: skip spec files
+    "supabase/functions",
+    "supabase/.temp",
+    "**/*.test.ts",
+    "**/*.spec.ts"
   ]
 }

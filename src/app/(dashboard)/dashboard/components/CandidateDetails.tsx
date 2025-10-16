@@ -1,66 +1,125 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import toast from "react-hot-toast";
 import AddRefereeModal from "./AddRefereeModal";
 import { supabase } from "@/lib/supabaseClient";
 import type { Candidate, Referee, Request } from "@/types/models";
 
 type Role = "user" | "manager" | "admin";
-
 const FOURTEEN_D_MS = 14 * 24 * 60 * 60 * 1000;
 
 export default function CandidateDetails({
   candidate,
   role,
   companyId,
-  referees,
-  requests,
   onRefresh,
 }: {
   candidate: Candidate;
   role: Role;
   companyId: string | null;
-  referees: Referee[];
-  requests: Request[];
   onRefresh: () => Promise<void>;
 }) {
+  const [referees, setReferees] = useState<Referee[]>([]);
+  const [requests, setRequests] = useState<Request[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showAddRef, setShowAddRef] = useState(false);
   const [cooldown, setCooldown] = useState<number>(0);
 
-  // countdown
+  // ────────────────────────────── Load candidate data ──────────────────────────────
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      console.log("🎯 Candidate ID passed to CandidateDetails:", candidate.id);
+
+      const { data: refs, error: refError } = await supabase
+        .from("referees")
+        .select("id, name, email, mobile, relationship, candidate_id, created_at")
+        .eq("candidate_id", candidate.id);
+
+      const { data: reqs, error: reqError } = await supabase
+        .from("reference_requests")
+        .select("*")
+        .eq("candidate_id", candidate.id);
+
+      if (refError || reqError) throw refError || reqError;
+
+      console.log("📋 Referees fetched:", refs);
+      setReferees(refs || []);
+      setRequests(reqs || []);
+    } catch (err) {
+      console.error("Failed to load candidate details:", err);
+      toast.error("Could not load referees for this candidate.");
+    } finally {
+      setLoading(false);
+    }
+  }, [candidate.id]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // ────────────────────────────── Realtime sync ──────────────────────────────
+  useEffect(() => {
+    const channel = supabase
+      .channel(`realtime:candidate:${candidate.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "referees" },
+        (payload) => {
+          const newRef = payload.new as Referee;
+          if (!newRef?.candidate_id || newRef.candidate_id !== candidate.id) return;
+          console.log("📡 Referee change:", payload.eventType, newRef.name);
+
+          setReferees((prev) => {
+            if (payload.eventType === "INSERT") return [newRef, ...prev];
+            if (payload.eventType === "UPDATE")
+              return prev.map((r) => (r.id === newRef.id ? newRef : r));
+            if (payload.eventType === "DELETE")
+              return prev.filter((r) => r.id !== newRef.id);
+            return prev;
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [candidate.id]);
+
+  // ────────────────────────────── Countdown for resend ──────────────────────────────
   useEffect(() => {
     if (cooldown <= 0) return;
     const t = setInterval(() => setCooldown((s) => Math.max(0, s - 1)), 1000);
     return () => clearInterval(t);
   }, [cooldown]);
 
+  // ────────────────────────────── Derived logic ──────────────────────────────
   const pending = requests.filter((r) => r.status === "pending");
   const anyOverdue = pending.some(
     (r) => new Date(r.created_at).getTime() < Date.now() - 7 * 24 * 60 * 60 * 1000
   );
 
-  // Enforce “max 3 resends in 14 days” (unless manager/admin)
   const canResendNow = useMemo(() => {
     if (role !== "user") return true;
-    // We rely on these two columns (see SQL below):
-    // - resend_count_14d (int)
-    // - resend_window_start (timestamptz)
     const windowStart = requests
       .map((r) => r.resend_window_start as any as string | null)
       .filter(Boolean)
       .sort()
       .at(0);
-
-    const resendSum = requests.reduce((sum, r) => sum + (r.resend_count_14d || 0), 0);
-
-    if (!windowStart) return true; // not started yet
-    const withinWindow = Date.now() - new Date(windowStart).getTime() < FOURTEEN_D_MS;
-
+    const resendSum = requests.reduce(
+      (sum, r) => sum + (r.resend_count_14d || 0),
+      0
+    );
+    if (!windowStart) return true;
+    const withinWindow =
+      Date.now() - new Date(windowStart).getTime() < FOURTEEN_D_MS;
     if (!withinWindow) return true;
     return resendSum < 3;
   }, [requests, role]);
 
+  // ────────────────────────────── Resend all ──────────────────────────────
   const handleResendAll = async () => {
     if (cooldown > 0) return;
     if (pending.length === 0) {
@@ -72,19 +131,12 @@ export default function CandidateDetails({
       return;
     }
 
-    // Start a 10s cooldown visual
     setCooldown(10);
-
-    // Example resend implementation:
-    // 1) update reference_requests: increment resend_count_14d & set/refresh window start
-    // 2) (trigger your email sending mechanism elsewhere: DB trigger / Edge Function / webhook)
     const nowIso = new Date().toISOString();
-
     const updates = pending.map((r) => {
       const withinWindow =
         r.resend_window_start &&
         Date.now() - new Date(r.resend_window_start).getTime() < FOURTEEN_D_MS;
-
       return {
         id: r.id,
         resend_count_14d: withinWindow ? (r.resend_count_14d || 0) + 1 : 1,
@@ -92,7 +144,10 @@ export default function CandidateDetails({
       };
     });
 
-    const { error } = await supabase.from("reference_requests").upsert(updates).select("id");
+    const { error } = await supabase
+      .from("reference_requests")
+      .upsert(updates)
+      .select("id");
     if (error) {
       toast.error(error.message);
       return;
@@ -102,18 +157,29 @@ export default function CandidateDetails({
     await onRefresh();
   };
 
+  // ────────────────────────────── Render ──────────────────────────────
   return (
     <div className="bg-white rounded-xl shadow border border-gray-100 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-500">Candidate:</span>
-          <span className="font-medium">{candidate.full_name}</span>
-          {anyOverdue && (
-            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs bg-red-100 text-red-700 ml-2">
-              🕓 Overdue
-            </span>
-          )}
-        </div>
+<div className="flex items-center gap-2 flex-wrap">
+  <span className="text-sm text-gray-500">Candidate:</span>
+  <span className="font-medium">{candidate.full_name}</span>
+
+  {/* ✅ Consent Status Badge */}
+  {candidate.consent_status === "granted" && (
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">
+      ✅ Consent Granted
+    </span>
+  )}
+
+  {/* 🕓 Overdue Badge */}
+  {anyOverdue && (
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700">
+      🕓 Overdue
+    </span>
+  )}
+</div>
+
 
         <div className="flex items-center gap-2">
           <button
@@ -131,7 +197,11 @@ export default function CandidateDetails({
                 ? "bg-gray-200 text-gray-600 cursor-not-allowed"
                 : "bg-yellow-500 text-white hover:bg-yellow-600"
             }`}
-            title={role === "user" ? "Max 3 resends within 14 days" : "No limit (manager/admin)"}
+            title={
+              role === "user"
+                ? "Max 3 resends within 14 days"
+                : "No limit (manager/admin)"
+            }
           >
             {cooldown > 0 ? `Retry in ${cooldown}s` : "Resend All Pending"}
           </button>
@@ -152,35 +222,45 @@ export default function CandidateDetails({
             </tr>
           </thead>
           <tbody>
-            {referees.map((r) => {
-              const req = requests.find((q) => q.referee_id === r.id);
-              return (
-                <tr key={r.id} className="border-b">
-                  <td className="p-3">{r.full_name}</td>
-                  <td className="p-3">{r.email}</td>
-                  <td className="p-3 text-gray-600">{r.mobile || "—"}</td>
-                  <td className="p-3 text-gray-600">{r.relationship || "—"}</td>
-                  <td className="p-3">
-                    {req?.status ? (
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs bg-gray-100 text-gray-700">
-                        {req.status}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-gray-400">—</span>
-                    )}
-                  </td>
-                  <td className="p-3 text-gray-600">{req?.resend_count_14d ?? 0}</td>
-                </tr>
-              );
-            })}
-            {referees.length === 0 && (
-              <tr>
-                <td colSpan={6} className="p-6 text-center text-gray-500">
-                  No referees yet.
-                </td>
-              </tr>
+  {loading ? (
+    <tr>
+      <td colSpan={6} className="p-6 text-center text-gray-500 italic">
+        Loading referees…
+      </td>
+    </tr>
+  ) : referees.length === 0 ? (
+    <tr>
+      <td colSpan={6} className="p-6 text-center text-gray-500">
+        No referees yet.
+      </td>
+    </tr>
+  ) : (
+    [...new Map(referees.map((r) => [r.id, r])).values()].map((r) => {
+      const req = requests.find((q) => q.referee_id === r.id);
+      return (
+        <tr key={r.id} className="border-b">
+          <td className="p-3">{r.name}</td>
+          <td className="p-3">{r.email}</td>
+          <td className="p-3 text-gray-600">{r.mobile || "—"}</td>
+          <td className="p-3 text-gray-600">{r.relationship || "—"}</td>
+          <td className="p-3">
+            {req?.status ? (
+              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs bg-gray-100 text-gray-700">
+                {req.status}
+              </span>
+            ) : (
+              <span className="text-xs text-gray-400">—</span>
             )}
-          </tbody>
+          </td>
+          <td className="p-3 text-gray-600">
+            {req?.resend_count_14d ?? 0}
+          </td>
+        </tr>
+      );
+    })
+  )}
+</tbody>
+
         </table>
       </div>
 
@@ -192,7 +272,7 @@ export default function CandidateDetails({
           onSaved={async () => {
             toast.success("Referee added.");
             setShowAddRef(false);
-            await onRefresh();
+            await loadData(); // ✅ refresh local data directly
           }}
         />
       )}

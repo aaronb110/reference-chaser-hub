@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import toast from "react-hot-toast";
+import { v4 as uuidv4 } from "uuid";
+
 
 type CandidateRow = {
   id: string;
@@ -11,7 +13,9 @@ type CandidateRow = {
   consent_token: string;
   reference_type?: string;
   reference_years_required?: number;
-  template_id?: string | null; // ✅ fixed field name
+  template_id?: string | null;
+  company_id?: string | null;      
+  created_by?: string | null;       
   config?: any;
 };
 
@@ -34,13 +38,14 @@ export default function AddRefereesPage() {
       console.log("🧠 Checking consent_token:", `"${cleanToken}"`);
 
       // 1️⃣ Get candidate basics
-      const { data: cand, error: candErr } = await supabase
-        .from("candidates")
-        .select(
-          "id, full_name, consent_token, reference_type, reference_years_required, template_id"
-        )
-        .eq("consent_token", cleanToken)
-        .maybeSingle();
+const { data: cand, error: candErr } = await supabase
+  .from("candidates")
+  .select(
+    "id, full_name, consent_token, reference_type, reference_years_required, template_id, company_id, created_by"
+  )
+  .eq("consent_token", cleanToken)
+  .maybeSingle();
+
 
       if (candErr) {
         console.error("❌ Supabase query error:", candErr);
@@ -115,18 +120,23 @@ if (cand.template_id) {
     try {
       // 1️⃣ Insert referees
       const { data: inserted, error: insertError } = await supabase
-        .from("referees")
-        .insert(
-          referees.map((r) => ({
-            candidate_id: candidate.id,
-            type: r.type,
-            name: r.name,
-            email: r.email,
-            status: "invited",
-            email_sent: false,
-          }))
-        )
-        .select("id");
+  .from("referees")
+  .insert(
+    referees.map((r) => ({
+      id: uuidv4(),
+      candidate_id: candidate.id,
+      name: r.name.trim(),
+      email: r.email.trim().toLowerCase(),
+      type: r.type,
+      status: "invited",
+      email_sent: false,
+      created_at: new Date().toISOString(),
+      company_id: candidate.company_id || null, // ✅ add this
+      created_by: candidate.created_by || null, // ✅ add this
+      token: uuidv4(), // ✅ unique link token
+    }))
+  )
+  .select("id");
 
       if (insertError) {
         console.error("❌ Supabase insert error:", insertError);
@@ -138,14 +148,17 @@ if (cand.template_id) {
       const refereeCount = inserted?.length ?? referees.length;
 
       // 2️⃣ Update candidate record
-      const { error: updateError } = await supabase
-        .from("candidates")
-        .update({
-          referee_count: refereeCount,
-          status: "referees_submitted",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", candidate.id);
+  const { error: updateError } = await supabase
+  .from("candidates")
+  .update({
+    referee_count: refereeCount,
+    status: "referees_submitted",
+    consent_status: "granted",         // ✅ add this
+    consent_at: new Date().toISOString(), // ✅ mark timestamp
+    updated_at: new Date().toISOString(),
+  })
+  .eq("id", candidate.id);
+
 
       if (updateError) {
         console.error("❌ Candidate update error:", updateError);

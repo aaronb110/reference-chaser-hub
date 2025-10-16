@@ -30,13 +30,25 @@ export type Candidate = {
 
 export type Referee = {
   id: string;
-  candidate_id: string;           // ✅ added — links referee to candidate
-  full_name: string;
+  candidate_id: string;
+  name: string;                    // ✅ matches DB column
   email: string;
   mobile?: string | null;
   relationship?: string | null;
-  created_at?: string;
+  created_by?: string | null;
+  company_id?: string | null;
+  type?: string | null;
+  status?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  email_sent?: boolean | null;
+  token?: string | null;
+  email_sent_at?: string | null;
+  response_received_at?: string | null;
+  declined_reason?: string | null;
+  notes?: string | null;
 };
+
 
 export type Request = {
   id: string;
