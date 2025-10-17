@@ -8,17 +8,68 @@ const RESEND_WEBHOOK_SECRET = Deno.env.get("RESEND_WEBHOOK_SECRET")!;
 
 const supabase = createClient(SB_URL, SB_SERVICE_ROLE_KEY);
 
+// ── Referee Email Updates helper ───────────────────────────────
+async function updateRefereeEmailStatusByEmail(
+  email: string,
+  status: "delivered" | "bounced" | "failed"
+) {
+  console.log("🔍 Looking for referee email:", email, "to set", status);
+
+  const { data: refs, error: findErr } = await supabase
+    .from("referees")
+    .select("id, email, email_status, created_at")
+    .ilike("email", email)
+    .in("email_status", ["pending", "sent"])
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  console.log("📦 Query result:", refs, "error:", findErr);
+
+  if (findErr) {
+    console.error("❌ find referee failed:", findErr);
+    return;
+  }
+
+  if (!refs || refs.length === 0) {
+    console.log("ℹ️ no active referee found for", email);
+    return;
+  }
+
+  const refId = refs[0].id;
+
+  const { error: updErr } = await supabase
+    .from("referees")
+    .update({ email_status: status })
+    .eq("id", refId);
+
+  if (updErr) {
+    console.error("❌ referee update failed:", updErr);
+  } else {
+    console.log(`✅ Referee marked ${status}:`, email);
+  }
+}
+
+
+// ── Main webhook ───────────────────────────────
 serve(async (req) => {
   try {
-    const payload = await req.text(); // exact raw body
+    const payload = await req.text();
     const headers = Object.fromEntries(req.headers.entries());
 
-    // Verify with Svix (Resend)
-    const wh = new Webhook(RESEND_WEBHOOK_SECRET);
-    const event = wh.verify(payload, headers);
+   let event;
+try {
+  const wh = new Webhook(RESEND_WEBHOOK_SECRET);
+  event = wh.verify(payload, headers);
+} catch {
+  //console.warn("⚠️ Skipping Svix signature verification (local test mode)");
+  // event = JSON.parse(payload); // ← allows manual testing
+}
+
 
     const { type } = event;
-    const email = event.data?.to?.[0] || event.data?.to;
+    const toField = event.data?.to;
+const email = Array.isArray(toField) ? toField[0] : toField;
+
     const subject =
       event.data?.subject ||
       event.data?.headers?.subject ||
@@ -26,61 +77,61 @@ serve(async (req) => {
 
     console.log("✅ Verified:", type, "for", email);
 
-    // Log ALL email events
-    const { error: insertError } = await supabase
-      .from("email_logs")
-      .insert({
-        recipient_email: email,
-        subject,
-        status: type.includes("bounced")
-          ? "bounced"
-          : type.includes("failed")
-          ? "failed"
-          : type.includes("delivered")
-          ? "delivered"
-          : type.includes("sent")
-          ? "sent"
-          : type.includes("opened")
-          ? "opened"
-          : "other",
-        event_type: type,
-        created_at: new Date().toISOString(),
-      });
+    // ── Log all events ───────────────────────────────
+    const { error: insertError } = await supabase.from("email_logs").insert({
+      recipient_email: email,
+      subject,
+      status: type.includes("bounced")
+        ? "bounced"
+        : type.includes("failed")
+        ? "failed"
+        : type.includes("delivered")
+        ? "delivered"
+        : type.includes("sent")
+        ? "sent"
+        : type.includes("opened")
+        ? "opened"
+        : "other",
+      event_type: type,
+      created_at: new Date().toISOString(),
+    });
 
-    if (insertError) {
-      console.error("❌ email_logs insert failed:", insertError);
-    } else {
-      console.log("🪵 email_logs insert succeeded for", email);
+    if (insertError) console.error("❌ email_logs insert failed:", insertError);
+    else console.log("🪵 email_logs insert succeeded for", email);
+
+    // ── Candidate updates ───────────────────────────────
+    if (type === "email.bounced" || type === "email.delivery_failed") {
+      const { error: updateError } = await supabase
+        .from("candidates")
+        .update({ email_status: "bounced" })
+        .eq("email", email);
+
+      if (updateError)
+        console.error("❌ candidate update failed:", updateError);
+      else console.log("✅ Candidate bounce handled:", email);
     }
 
-// Update candidate status for bounce/fail
-if (type === "email.bounced" || type === "email.delivery_failed") {
-  const { error: updateError } = await supabase
-    .from("candidates")
-    .update({ email_status: "bounced" })
-    .eq("email", email);
+    if (type === "email.delivered") {
+      const { error: deliveredError } = await supabase
+        .from("candidates")
+        .update({ email_status: "delivered" })
+        .eq("email", email);
 
-  if (updateError) {
-    console.error("❌ candidate update failed:", updateError);
-  } else {
-    console.log("✅ Bounce handled for", email);
-  }
-}
+      if (deliveredError)
+        console.error("❌ candidate delivered update failed:", deliveredError);
+      else console.log("✅ Candidate marked as delivered:", email);
+    }
 
-// Mark candidate as delivered if applicable
-if (type === "email.delivered") {
-  const { error: deliveredError } = await supabase
-    .from("candidates")
-    .update({ email_status: "delivered" })
-    .eq("email", email);
-
-  if (deliveredError) {
-    console.error("❌ candidate delivered update failed:", deliveredError);
-  } else {
-    console.log("✅ Candidate marked as delivered:", email);
-  }
-}
-
+    // ── Referee updates ───────────────────────────────
+    if (type === "email.delivered") {
+      await updateRefereeEmailStatusByEmail(email, "delivered");
+    }
+    if (type === "email.bounced") {
+      await updateRefereeEmailStatusByEmail(email, "bounced");
+    }
+    if (type === "email.delivery_failed") {
+      await updateRefereeEmailStatusByEmail(email, "failed");
+    }
 
     return new Response(JSON.stringify({ ok: true }), {
       headers: { "Content-Type": "application/json" },

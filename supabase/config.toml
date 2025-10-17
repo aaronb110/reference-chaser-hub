@@ -348,7 +348,7 @@ s3_secret_key = "env(S3_SECRET_KEY)"
 
 [functions.send-reference-email]
 enabled = true
-verify_jwt = true
+verify_jwt = false
 import_map = "./functions/send-reference-email/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
@@ -359,7 +359,7 @@ entrypoint = "./functions/send-reference-email/index.ts"
 
 [functions.send-email]
 enabled = true
-verify_jwt = true
+verify_jwt = false
 import_map = "./functions/send-email/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
@@ -370,7 +370,7 @@ entrypoint = "./functions/send-email/index.ts"
 
 [functions.send-consent-email]
 enabled = true
-verify_jwt = true
+verify_jwt = false
 import_map = "./functions/send-consent-email/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
@@ -381,7 +381,7 @@ entrypoint = "./functions/send-consent-email/index.ts"
 
 [functions.send-referee-invite]
 enabled = true
-verify_jwt = true
+verify_jwt = false
 import_map = "./functions/send-referee-invite/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
@@ -392,7 +392,7 @@ entrypoint = "./functions/send-referee-invite/index.ts"
 
 [functions.handle-email-bounce]
 enabled = true
-verify_jwt = true
+verify_jwt = false
 import_map = "./functions/handle-email-bounce/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
