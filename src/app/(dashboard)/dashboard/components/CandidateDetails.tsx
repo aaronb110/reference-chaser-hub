@@ -3,8 +3,9 @@
 import { useMemo, useState, useEffect, useCallback } from "react";
 import toast from "react-hot-toast";
 import AddRefereeModal from "./AddRefereeModal";
+import EditRefereeModal from "./EditRefereeModal"; // ✅ new import
 import { supabase } from "@/lib/supabaseClient";
-import type { Candidate, Referee, Request } from "@/types/models";
+import type { Candidate, Referee, Request, RefereeWithRequest } from "@/types/models";
 
 type Role = "user" | "manager" | "admin";
 const FOURTEEN_D_MS = 14 * 24 * 60 * 60 * 1000;
@@ -20,10 +21,11 @@ export default function CandidateDetails({
   companyId: string | null;
   onRefresh: () => Promise<void>;
 }) {
-  const [referees, setReferees] = useState<Referee[]>([]);
+  const [referees, setReferees] = useState<RefereeWithRequest[]>([]);
   const [requests, setRequests] = useState<Request[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddRef, setShowAddRef] = useState(false);
+  const [editingReferee, setEditingReferee] = useState<RefereeWithRequest | null>(null); // ✅ new
   const [cooldown, setCooldown] = useState<number>(0);
 
   // ────────────────────────────── Load candidate data ──────────────────────────────
@@ -34,7 +36,15 @@ export default function CandidateDetails({
 
       const { data: refs, error: refError } = await supabase
         .from("referees")
-        .select("id, name, email, mobile, relationship, candidate_id, created_at")
+        .select(`
+          id,
+          candidate_id,
+          name,
+          email,
+          mobile,
+          relationship,
+          reference_requests(status)
+        `)
         .eq("candidate_id", candidate.id);
 
       const { data: reqs, error: reqError } = await supabase
@@ -45,6 +55,12 @@ export default function CandidateDetails({
       if (refError || reqError) throw refError || reqError;
 
       console.log("📋 Referees fetched:", refs);
+      if (refs && refs.length > 0) {
+        refs.forEach((r) =>
+          console.log(`Referee: ${r.name} (${r.email}) → Status:`, r.reference_requests)
+        );
+      }
+
       setReferees(refs || []);
       setRequests(reqs || []);
     } catch (err) {
@@ -157,29 +173,36 @@ export default function CandidateDetails({
     await onRefresh();
   };
 
+  // ────────────────────────────── Helper: Status badge ──────────────────────────────
+  const getRefStatus = (r: RefereeWithRequest) => {
+    const joined = r.reference_requests?.[0]?.status;
+    const status = joined || r.status || "waiting";
+    return status.toLowerCase();
+  };
+
   // ────────────────────────────── Render ──────────────────────────────
   return (
     <div className="bg-white rounded-xl shadow border border-gray-100 p-4">
+      {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-<div className="flex items-center gap-2 flex-wrap">
-  <span className="text-sm text-gray-500">Candidate:</span>
-  <span className="font-medium">{candidate.full_name}</span>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm text-gray-500">Candidate:</span>
+          <span className="font-medium">{candidate.full_name}</span>
 
-  {/* ✅ Consent Status Badge */}
-  {candidate.consent_status === "granted" && (
-    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">
-      ✅ Consent Granted
-    </span>
-  )}
+          {/* ✅ Consent Status Badge */}
+          {candidate.consent_status === "granted" && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">
+              ✅ Consent Granted
+            </span>
+          )}
 
-  {/* 🕓 Overdue Badge */}
-  {anyOverdue && (
-    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700">
-      🕓 Overdue
-    </span>
-  )}
-</div>
-
+          {/* 🕓 Overdue Badge */}
+          {anyOverdue && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700">
+              🕓 Overdue
+            </span>
+          )}
+        </div>
 
         <div className="flex items-center gap-2">
           <button
@@ -219,51 +242,67 @@ export default function CandidateDetails({
               <th className="py-2 px-3 text-left font-medium">Relationship</th>
               <th className="py-2 px-3 text-left font-medium">Status</th>
               <th className="py-2 px-3 text-left font-medium">Resends</th>
+              <th className="py-2 px-3 text-right font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
-  {loading ? (
-    <tr>
-      <td colSpan={6} className="p-6 text-center text-gray-500 italic">
-        Loading referees…
-      </td>
-    </tr>
-  ) : referees.length === 0 ? (
-    <tr>
-      <td colSpan={6} className="p-6 text-center text-gray-500">
-        No referees yet.
-      </td>
-    </tr>
-  ) : (
-    [...new Map(referees.map((r) => [r.id, r])).values()].map((r) => {
-      const req = requests.find((q) => q.referee_id === r.id);
-      return (
-        <tr key={r.id} className="border-b">
-          <td className="p-3">{r.name}</td>
-          <td className="p-3">{r.email}</td>
-          <td className="p-3 text-gray-600">{r.mobile || "—"}</td>
-          <td className="p-3 text-gray-600">{r.relationship || "—"}</td>
-          <td className="p-3">
-            {req?.status ? (
-              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs bg-gray-100 text-gray-700">
-                {req.status}
-              </span>
+            {loading ? (
+              <tr>
+                <td colSpan={7} className="p-6 text-center text-gray-500 italic">
+                  Loading referees…
+                </td>
+              </tr>
+            ) : referees.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="p-6 text-center text-gray-500">
+                  No referees yet.
+                </td>
+              </tr>
             ) : (
-              <span className="text-xs text-gray-400">—</span>
+              referees.map((r) => {
+                const req = requests.find((q) => q.referee_id === r.id);
+                return (
+                  <tr key={r.id} className="border-b">
+                    <td className="p-3">{r.name}</td>
+                    <td className="p-3">{r.email}</td>
+                    <td className="p-3 text-gray-600">{r.mobile || "—"}</td>
+                    <td className="p-3 text-gray-600">{r.relationship || "—"}</td>
+                    <td className="p-3">
+                      <span
+                        className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs
+                          ${
+                            {
+                              waiting: "bg-yellow-100 text-yellow-800",
+                              sent: "bg-green-100 text-green-800",
+                              completed: "bg-blue-100 text-blue-800",
+                              declined: "bg-red-100 text-red-800",
+                            }[getRefStatus(r)] ?? "bg-slate-100 text-slate-700"
+                          }`}
+                      >
+                        {getRefStatus(r).charAt(0).toUpperCase() +
+                          getRefStatus(r).slice(1)}
+                      </span>
+                    </td>
+                    <td className="p-3 text-gray-600">
+                      {req?.resend_count_14d ?? 0}
+                    </td>
+                    <td className="p-3 text-right">
+                      <button
+                        onClick={() => setEditingReferee(r)}
+                        className="text-indigo-600 hover:underline text-sm"
+                      >
+                        Edit
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })
             )}
-          </td>
-          <td className="p-3 text-gray-600">
-            {req?.resend_count_14d ?? 0}
-          </td>
-        </tr>
-      );
-    })
-  )}
-</tbody>
-
+          </tbody>
         </table>
       </div>
 
+      {/* Add Referee Modal */}
       {showAddRef && (
         <AddRefereeModal
           candidate={candidate}
@@ -272,7 +311,20 @@ export default function CandidateDetails({
           onSaved={async () => {
             toast.success("Referee added.");
             setShowAddRef(false);
-            await loadData(); // ✅ refresh local data directly
+            await loadData();
+          }}
+        />
+      )}
+
+      {/* ✅ Edit Referee Modal */}
+      {editingReferee && (
+        <EditRefereeModal
+          referee={editingReferee}
+          onClose={() => setEditingReferee(null)}
+          onSaved={async () => {
+            toast.success("Referee updated.");
+            setEditingReferee(null);
+            await loadData();
           }}
         />
       )}

@@ -49,6 +49,11 @@ export type Referee = {
   notes?: string | null;
 };
 
+export type RefereeWithRequest = Referee & {
+  reference_requests?: { status: string }[];
+};
+
+
 
 export type Request = {
   id: string;
