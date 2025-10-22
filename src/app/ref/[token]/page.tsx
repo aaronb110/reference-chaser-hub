@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabaseClient'
 export default function RefereeFormPage() {
   const { token } = useParams()
   const [loading, setLoading] = useState(true)
-  const [reference, setReference] = useState<any>(null)
+  const [referee, setReferee] = useState<any>(null)
   const [formData, setFormData] = useState({
     referee_name: '',
     relationship: '',
@@ -19,17 +19,17 @@ export default function RefereeFormPage() {
   const [submitted, setSubmitted] = useState(false)
 
   useEffect(() => {
-    if (token) fetchReference()
+    if (token) fetchReferee()
   }, [token])
 
-  async function fetchReference() {
+  async function fetchReferee() {
     const { data, error } = await supabase
-      .from('references')
+      .from('referees')
       .select('*')
       .eq('token', token)
       .single()
 
-    if (!error && data) setReference(data)
+    if (!error && data) setReferee(data)
     setLoading(false)
   }
 
@@ -38,16 +38,16 @@ export default function RefereeFormPage() {
     setLoading(true)
 
     const { error } = await supabase
-      .from('references')
+      .from('referees')
       .update({
-        referee_name: formData.referee_name,
+        name: formData.referee_name,
         relationship: formData.relationship,
-        comments: formData.comments,
+        notes: formData.comments,
         q1: formData.q1,
         q2: formData.q2,
         q3: formData.q3,
         status: 'completed',
-        completed_at: new Date().toISOString()
+        response_received_at: new Date().toISOString()
       })
       .eq('token', token)
 
@@ -56,12 +56,14 @@ export default function RefereeFormPage() {
   }
 
   if (loading) return <p className="p-4 text-center">Loading…</p>
-  if (!reference) return <p className="p-4 text-center">Invalid or expired link.</p>
+  if (!referee) return <p className="p-4 text-center">Invalid or expired link.</p>
   if (submitted) return <p className="p-4 text-center">✅ Thank you! Your reference has been submitted.</p>
 
   return (
     <div className="max-w-xl mx-auto p-6">
-      <h1 className="text-2xl font-semibold mb-4">Reference for {reference.candidate_name}</h1>
+      <h1 className="text-2xl font-semibold mb-4">
+        Reference for {referee.candidate_name || 'Candidate'}
+      </h1>
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="block mb-1">Your Name</label>
@@ -93,7 +95,6 @@ export default function RefereeFormPage() {
           />
         </div>
 
-        {/* Example 3 quick questions */}
         <div>
           <label className="block mb-1">Would you rehire this person?</label>
           <select

@@ -291,12 +291,14 @@ const candidatePayload = {
   full_name: toTitleCaseName(cleaned.full_name),
   email: normaliseEmail(cleaned.email),
   mobile: cleaned.mobile ? ukToE164(cleaned.mobile) : null,
-  created_by: userId,
+  company_id: companyId,           // ✅ NEW — link candidate to recruiter’s company
+  created_by: userId,              // already existed, keep it
   consent_token: consentToken,
   status: "awaiting_consent",
   consent_status: "pending",
   template_id: newCandidate.template_id || null,
 };
+
 
 console.log("🧩 Normalised candidate payload:", candidatePayload);
 
