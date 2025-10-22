@@ -144,9 +144,10 @@ useEffect(() => {
 supabase
   .from("candidates")
   .select(
-    "id, full_name, email, mobile, created_at, created_by, is_archived, archived_by, archived_at, email_status, status, referee_count, updated_at, consent_status, consent_at"
+    "id, full_name, email, mobile, created_at, created_by, is_archived, archived_by, archived_at, email_status, status, referee_count, updated_at, consent_status, consent_at, template_id"
   )
   .order("created_at", { ascending: false }),
+
 
 
           supabase.from("referees").select("*"),
@@ -805,18 +806,21 @@ return (
       {expanded === c.id && (
         <tr className="bg-gray-50">
           <td colSpan={6} className="p-4">
-            <CandidateDetails
-              candidate={c}
-              role={role}
-              companyId={companyId}
+           {(() => {
+  console.log("🧠 Candidate object when expanding:", c);
+  return (
+    <CandidateDetails
+      candidate={c}
+      role={role}
+      companyId={companyId}
+      onRefresh={async () => {
+        const { data } = await supabase.from("reference_requests").select("*");
+        if (data) setRequests(data);
+      }}
+    />
+  );
+})()}
 
-              onRefresh={async () => {
-                const { data } = await supabase
-                  .from("reference_requests")
-                  .select("*");
-                if (data) setRequests(data);
-              }}
-            />
           </td>
         </tr>
       )}

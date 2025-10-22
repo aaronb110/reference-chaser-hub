@@ -1,13 +1,12 @@
 "use client";
 
-import { useState } from "react";
-import toast from "react-hot-toast";
+import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import toast from "react-hot-toast";
+import { trimAll, toTitleCaseName, normaliseEmail, ukToE164 } from "@/lib/utils";
 import type { Candidate } from "@/types/models";
-import { trimAll, toTitleCaseName, normaliseEmail } from "../../../../utils/normalise";
 
-const ukToE164 = (mobile: string) =>
-  /^07\d{9}$/.test(mobile) ? "+44" + mobile.slice(1) : mobile;
+type RefTypeOption = { value: string; label: string };
 
 export default function AddRefereeModal({
   candidate,
@@ -15,33 +14,86 @@ export default function AddRefereeModal({
   onClose,
   onSaved,
 }: {
-  candidate: Candidate;
+  candidate: any;
   companyId: string | null;
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
+  console.log("🧠 AddRefereeModal received candidate:", candidate);
+
   const [full_name, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [mobile, setMobile] = useState("");
   const [relationship, setRelationship] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const [refereeOptions, setRefereeOptions] = useState<RefTypeOption[]>([]);
+  const [selectedRefType, setSelectedRefType] = useState("");
 
-    if (!full_name.trim() || !email.trim() || !relationship.trim()) {
-      toast.error("Full name, email and relationship are required.");
+// 🔹 Load ref types based on candidate’s template
+useEffect(() => {
+  const fetchTemplateRefTypes = async () => {
+    // ✅ Fix: use candidate.template_id (correct key)
+    const templateId = candidate?.template_id || candidate?.reference_template_id;
+    if (!templateId) return;
+
+    const { data: template, error } = await supabase
+      .from("reference_templates")
+      .select("ref_types")
+      .eq("id", templateId)
+      .single();
+
+    if (error) {
+      console.error("❌ Failed to fetch ref_types:", error);
       return;
     }
+
+    console.log("📋 Loaded ref_types:", template?.ref_types);
+    setRefereeOptions(template?.ref_types || []);
+
+    if (template?.ref_types?.length === 1) {
+      setSelectedRefType(template.ref_types[0].label);
+    }
+  };
+
+  fetchTemplateRefTypes();
+}, [candidate]);
+
+
+  // 🧠 Main save handler
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    console.log("🚀 handleSubmit fired");
+
+    console.log("🔍 Step 1 – Checking required fields");
+    if (!full_name.trim() || !email.trim()) {
+      console.log("❌ Failed: missing name or email");
+      toast.error("Full name and email are required.");
+      return;
+    }
+
+    console.log("🔍 Step 2 – Checking referee type");
+    if (!selectedRefType) {
+      console.log("❌ Failed: no referee type selected");
+      toast.error("Please select a referee type.");
+      return;
+    }
+
+    console.log("🔍 Step 3 – Checking email format");
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      console.log("❌ Failed: invalid email format");
       toast.error("Enter a valid email.");
       return;
     }
+
+    console.log("🔍 Step 4 – Checking mobile format");
     if (mobile && !/^07\d{9}$/.test(mobile)) {
+      console.log("❌ Failed: invalid mobile");
       toast.error("Mobile must be UK format (07xxxxxxxxx) if provided.");
       return;
     }
 
+    console.log("✅ Passed all validation, proceeding to insert…");
     setSaving(true);
 
     const {
@@ -54,7 +106,6 @@ export default function AddRefereeModal({
       return;
     }
 
-    // 🔹 Normalise all inputs before saving
     const cleaned = trimAll({
       full_name,
       email,
@@ -64,28 +115,74 @@ export default function AddRefereeModal({
 
     const payload = {
       candidate_id: candidate.id,
-      name: toTitleCaseName(cleaned.full_name), // ✅ Use "name" to match DB column
+      name: toTitleCaseName(cleaned.full_name),
       email: normaliseEmail(cleaned.email),
       mobile: cleaned.mobile ? ukToE164(cleaned.mobile) : null,
       relationship: cleaned.relationship,
+      ref_type: selectedRefType,
+      template_id: candidate.template_id,
       created_by: user.id,
       company_id: companyId,
     };
 
     console.log("🟢 Inserting referee payload:", payload);
 
-    const { error } = await supabase.from("referees").insert(payload);
+const { data, error } = (await supabase
+  .from("referees")
+  .insert(payload)
+  .select()
+  .single()) as {
+    data: any | null;
+    error: { message?: string } | null;
+  };
 
-    if (error) {
-      console.error("❌ Insert error:", error);
-      toast.error(error.message);
-      setSaving(false);
-      return;
-    }
+console.log("✅ Insert complete, error:", error, "data:", data);
+
+if (error) {
+  console.error("❌ Insert error:", error);
+  toast.error(error.message ?? "Error adding referee");
+  setSaving(false);
+  return;
+}
+
+
+
+// 🔹 Trigger referee email Edge Function
+if (data?.id) {
+  console.log("📨 Triggering referee email for", data.email);
+  const { error: fnError } = await supabase.functions.invoke(
+    "send-reference-email",
+    { body: { referee_id: data.id } }
+  );
+
+if (fnError) {
+  console.error("❌ Email send failed:", fnError);
+  toast.success("Referee added and email queued to send.");
+} else {
+  toast.success("Referee added and email sent ✅");
+}
+
+
+// 🔹 Refresh dashboard + close modal
+await onSaved();
+onClose();
+setSaving(false);
+
+    console.log("✅ Insert complete:", { error });
+
+// Check for Supabase error
+if (error && typeof error === "object") {
+  console.error("❌ Insert error:", error);
+  toast.error((error as any)?.message ?? "Error adding referee");
+  setSaving(false);
+  return;
+}
 
     toast.success("Referee added successfully");
-    await onSaved();
-    setSaving(false);
+    console.log("🎉 onSaved about to run");
+await onSaved();
+onClose();
+setSaving(false);
   };
 
   return (
@@ -128,6 +225,24 @@ export default function AddRefereeModal({
             />
           </div>
 
+          {refereeOptions.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium">Referee Type</label>
+              <select
+                className="w-full border rounded-lg px-3 py-2 mt-1"
+                value={selectedRefType}
+                onChange={(e) => setSelectedRefType(e.target.value)}
+              >
+                <option value="">Select referee type...</option>
+                {refereeOptions.map((r) => (
+                  <option key={r.value} value={r.label}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium">Relationship</label>
             <input
@@ -158,4 +273,5 @@ export default function AddRefereeModal({
       </div>
     </div>
   );
+}
 }

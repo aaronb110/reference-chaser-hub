@@ -25,6 +25,8 @@ export type Candidate = {
   last_invite_sent_at?: string | null;
   referee_count?: number | null;
   updated_at?: string | null;
+  reference_template_id?: string | null;
+
 };
 
 
@@ -47,6 +49,8 @@ export type Referee = {
   response_received_at?: string | null;
   declined_reason?: string | null;
   notes?: string | null;
+  email_status?: "pending" | "sent" | "delivered" | "bounced";
+
 };
 
 export type RefereeWithRequest = Referee & {
@@ -65,3 +69,8 @@ export type Request = {
   resend_window_start?: string | null;
   created_at: string;
 };
+
+export interface RefTypeOption {
+  label: string;
+  key: string;
+}
