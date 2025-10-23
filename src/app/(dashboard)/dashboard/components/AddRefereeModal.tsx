@@ -30,70 +30,60 @@ export default function AddRefereeModal({
   const [refereeOptions, setRefereeOptions] = useState<RefTypeOption[]>([]);
   const [selectedRefType, setSelectedRefType] = useState("");
 
-// 🔹 Load ref types based on candidate’s template
-useEffect(() => {
-  const fetchTemplateRefTypes = async () => {
-    // ✅ Fix: use candidate.template_id (correct key)
-    const templateId = candidate?.template_id || candidate?.reference_template_id;
-    if (!templateId) return;
+  // 🔹 Load ref types based on candidate’s template
+  useEffect(() => {
+    const fetchTemplateRefTypes = async () => {
+      const templateId = candidate?.template_id || candidate?.reference_template_id;
+      if (!templateId) return;
 
-    const { data: template, error } = await supabase
-      .from("reference_templates")
-      .select("ref_types")
-      .eq("id", templateId)
-      .single();
+      const { data: template, error } = await supabase
+        .from("reference_templates")
+        .select("ref_types")
+        .eq("id", templateId)
+        .single();
 
-    if (error) {
-      console.error("❌ Failed to fetch ref_types:", error);
-      return;
-    }
+      if (error) {
+        console.error("❌ Failed to fetch ref_types:", error);
+        return;
+      }
 
-    console.log("📋 Loaded ref_types:", template?.ref_types);
-    setRefereeOptions(template?.ref_types || []);
+      console.log("📋 Loaded ref_types:", template?.ref_types);
+      setRefereeOptions(template?.ref_types || []);
 
-    if (template?.ref_types?.length === 1) {
-      setSelectedRefType(template.ref_types[0].label);
-    }
-  };
+      if (template?.ref_types?.length === 1) {
+        setSelectedRefType(template.ref_types[0].label);
+      }
+    };
 
-  fetchTemplateRefTypes();
-}, [candidate]);
-
+    fetchTemplateRefTypes();
+  }, [candidate]);
 
   // 🧠 Main save handler
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     console.log("🚀 handleSubmit fired");
 
-    console.log("🔍 Step 1 – Checking required fields");
+    // Validation
     if (!full_name.trim() || !email.trim()) {
-      console.log("❌ Failed: missing name or email");
       toast.error("Full name and email are required.");
       return;
     }
 
-    console.log("🔍 Step 2 – Checking referee type");
     if (!selectedRefType) {
-      console.log("❌ Failed: no referee type selected");
       toast.error("Please select a referee type.");
       return;
     }
 
-    console.log("🔍 Step 3 – Checking email format");
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      console.log("❌ Failed: invalid email format");
       toast.error("Enter a valid email.");
       return;
     }
 
-    console.log("🔍 Step 4 – Checking mobile format");
     if (mobile && !/^07\d{9}$/.test(mobile)) {
-      console.log("❌ Failed: invalid mobile");
       toast.error("Mobile must be UK format (07xxxxxxxxx) if provided.");
       return;
     }
 
-    console.log("✅ Passed all validation, proceeding to insert…");
     setSaving(true);
 
     const {
@@ -127,64 +117,47 @@ useEffect(() => {
 
     console.log("🟢 Inserting referee payload:", payload);
 
-const { data, error } = (await supabase
-  .from("referees")
-  .insert(payload)
-  .select()
-  .single()) as {
-    data: any | null;
-    error: { message?: string } | null;
+    const {
+      data,
+      error,
+    }: { data: any | null; error: { message?: string } | null } = await supabase
+      .from("referees")
+      .insert(payload)
+      .select()
+      .single();
+
+    console.log("✅ Insert complete, error:", error, "data:", data);
+
+    if (error) {
+      console.error("❌ Insert error:", error);
+      toast.error(error.message ?? "Error adding referee");
+      setSaving(false);
+      return;
+    }
+
+    // 🔹 Trigger referee email Edge Function
+    if (data?.id) {
+      console.log("📨 Triggering referee email for", data.email);
+      const { error: fnError } = await supabase.functions.invoke(
+        "send-reference-email",
+        { body: { referee_id: data.id } }
+      );
+
+      if (fnError) {
+        console.error("❌ Email send failed:", fnError);
+        toast.success("Referee added and email queued to send.");
+      } else {
+        toast.success("Referee added and email sent ✅");
+      }
+    }
+
+    // 🔹 Refresh dashboard + close modal
+    await onSaved();
+    onClose();
+    setSaving(false);
   };
 
-console.log("✅ Insert complete, error:", error, "data:", data);
-
-if (error) {
-  console.error("❌ Insert error:", error);
-  toast.error(error.message ?? "Error adding referee");
-  setSaving(false);
-  return;
-}
-
-
-
-// 🔹 Trigger referee email Edge Function
-if (data?.id) {
-  console.log("📨 Triggering referee email for", data.email);
-  const { error: fnError } = await supabase.functions.invoke(
-    "send-reference-email",
-    { body: { referee_id: data.id } }
-  );
-
-if (fnError) {
-  console.error("❌ Email send failed:", fnError);
-  toast.success("Referee added and email queued to send.");
-} else {
-  toast.success("Referee added and email sent ✅");
-}
-
-
-// 🔹 Refresh dashboard + close modal
-await onSaved();
-onClose();
-setSaving(false);
-
-    console.log("✅ Insert complete:", { error });
-
-// Check for Supabase error
-if (error && typeof error === "object") {
-  console.error("❌ Insert error:", error);
-  toast.error((error as any)?.message ?? "Error adding referee");
-  setSaving(false);
-  return;
-}
-
-    toast.success("Referee added successfully");
-    console.log("🎉 onSaved about to run");
-await onSaved();
-onClose();
-setSaving(false);
-  };
-
+  // 🖼️ Modal UI
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-black/60 z-50">
       <div className="bg-white rounded-xl shadow-lg p-6 w-full max-w-md">
@@ -273,5 +246,4 @@ setSaving(false);
       </div>
     </div>
   );
-}
 }
