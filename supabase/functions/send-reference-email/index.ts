@@ -8,11 +8,118 @@ const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
 const SITE = Deno.env.get("NEXT_PUBLIC_SITE_URL") || "https://www.refevo.com";
 const FROM_EMAIL = "no-reply@refevo.com";
 
+// ── Inline Limited Reference Templates ─────────────────────
+const limitedReferenceRecruiterHTML = (record) => `
+  <div style="font-family:'Inter',Arial,sans-serif;background-color:#F8FAFC;padding:40px;">
+    <div style="max-width:600px;margin:0 auto;background:#FFFFFF;border-radius:14px;
+                overflow:hidden;box-shadow:0 3px 10px rgba(0,0,0,0.07);">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td style="background-color:#0A1A2F;padding:22px 32px;">
+            <div style="font-weight:700;font-size:20px;color:#FFFFFF;">Refevo</div>
+            <p style="color:#CBD5E1;font-size:14px;margin:6px 0 0;">Reference Update</p>
+          </td>
+        </tr>
+        <tr><td style="background-color:#00B3B0;height:4px;"></td></tr>
+      </table>
+
+      <div style="padding:36px 32px;">
+        <p style="font-size:16px;color:#1E293B;margin-top:0;">Hi ${record.recruiter_name || "there"},</p>
+
+        <p style="font-size:15px;color:#475569;line-height:1.8;">
+          ${record.referee_name || "A referee"} from ${record.referee_company || "their organisation"} 
+          has completed a reference for <strong>${record.candidate_name || "your candidate"}</strong>.
+        </p>
+
+        <p style="font-size:15px;color:#475569;line-height:1.8;">
+          The referee has chosen to provide a <strong>basic employment confirmation</strong> — verifying the candidate’s job title and dates of employment, but without additional comments or feedback.
+        </p>
+
+        <p style="font-size:15px;color:#475569;line-height:1.8;">
+          You can view the full reference record in your dashboard if you need to follow up or request an alternative referee.
+        </p>
+
+        <div style="text-align:center;margin:36px 0;">
+          <a href="${SITE}/dashboard/references/${record.id}"
+             style="background-color:#00B3B0;color:#FFFFFF;text-decoration:none;
+                    padding:14px 36px;border-radius:8px;font-weight:600;font-size:15px;">
+            View Reference
+          </a>
+        </div>
+
+        <p style="font-size:14px;color:#334155;text-align:left;">Warm regards,</p>
+        <p style="font-size:14px;color:#334155;text-align:left;">
+          <strong>The Refevo Team</strong>
+        </p>
+      </div>
+
+      <div style="background-color:#F8FAFC;text-align:center;padding:20px;
+                  font-size:12px;color:#94A3B8;border-top:1px solid #E2E8F0;">
+        Powered by <strong style="color:#00B3B0;">Refevo</strong>
+      </div>
+    </div>
+  </div>
+`;
+
+
+const limitedReferenceCandidateHTML = (record) => `
+  <div style="font-family:'Inter',Arial,sans-serif;background-color:#F8FAFC;padding:40px;">
+    <div style="max-width:600px;margin:0 auto;background:#FFFFFF;border-radius:14px;
+                overflow:hidden;box-shadow:0 3px 10px rgba(0,0,0,0.07);">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td style="background-color:#0A1A2F;padding:22px 32px;">
+            <div style="font-weight:700;font-size:20px;color:#FFFFFF;">Refevo</div>
+            <p style="color:#CBD5E1;font-size:14px;margin:6px 0 0;">Reference Update</p>
+          </td>
+        </tr>
+        <tr><td style="background-color:#00B3B0;height:4px;"></td></tr>
+      </table>
+
+      <div style="padding:36px 32px;">
+        <p style="font-size:16px;color:#1E293B;margin-top:0;">Hi ${record.candidate_name?.split(" ")[0] || "there"},</p>
+
+        <p style="font-size:15px;color:#475569;line-height:1.8;">
+          Your referee <strong>${record.referee_name || "one of your referees"}</strong> from 
+          ${record.referee_company || "their organisation"} has provided a reference confirming that you were employed there.
+        </p>
+
+        <p style="font-size:15px;color:#475569;line-height:1.8;">
+          This is what’s known as a <strong>“basic employment reference”</strong> — it confirms only your job title, dates of employment, and that you worked with them, but doesn’t include personal feedback or comments.
+        </p>
+
+        <p style="font-size:15px;color:#475569;line-height:1.8;">
+          If your recruiter needs a more detailed reference covering your performance, reliability, or conduct, they may contact you to add another referee.
+        </p>
+
+        <div style="text-align:center;margin:36px 0;">
+          <a href="${SITE}/candidate/${record.token}"
+             style="background-color:#00B3B0;color:#FFFFFF;text-decoration:none;
+                    padding:14px 36px;border-radius:8px;font-weight:600;font-size:15px;">
+            View Status
+          </a>
+        </div>
+
+        <p style="font-size:14px;color:#334155;text-align:left;">Warm regards,</p>
+        <p style="font-size:14px;color:#334155;text-align:left;">
+          <strong>${record.company_name || "Your recruiter"}</strong>
+        </p>
+      </div>
+
+      <div style="background-color:#F8FAFC;text-align:center;padding:20px;
+                  font-size:12px;color:#94A3B8;border-top:1px solid #E2E8F0;">
+        Powered by <strong style="color:#00B3B0;">Refevo</strong>
+      </div>
+    </div>
+  </div>
+`;
+
+
+// ── Supabase Client ────────────────────────────────────────
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-// ──────────────────────────────────────────────────────────
+// ── Main Function ──────────────────────────────────────────
 serve(async (req) => {
-  // ── CORS preflight ──────────────────────────────────────
   if (req.method === "OPTIONS") {
     return new Response("ok", {
       headers: {
@@ -27,7 +134,15 @@ serve(async (req) => {
   try {
     const payload = await req.json();
     const record = payload.record ?? payload;
-    const { id, full_name, email, relationship, candidate_id } = record;
+
+    console.log("🧠 Reference type received:", record.reference_type);
+
+    const id = record.id;
+    const email =
+      record.referee_email ||
+      record.candidate_email ||
+      record.recruiter_email ||
+      record.email;
 
     if (!email || !id) {
       console.error("❌ Missing email or ID:", record);
@@ -37,45 +152,100 @@ serve(async (req) => {
       });
     }
 
-    // ── Build HTML ─────────────────────────────────────────
+    // ── Limited Reference Email Trigger ───────────────────────
+    if (record.reference_type === "limited") {
+      console.log("📩 Limited reference detected, sending recruiter + candidate notifications...");
+
+      const recruiterHtml = limitedReferenceRecruiterHTML(record);
+      const candidateHtml = limitedReferenceCandidateHTML(record);
+
+      // Send recruiter email
+      await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${RESEND_API_KEY}`,
+        },
+        body: JSON.stringify({
+          from: "Refevo <notifications@refevo.com>",
+          to: [record.recruiter_email],
+          subject: `Limited reference received for ${record.candidate_name}`,
+          html: recruiterHtml,
+        }),
+      });
+
+      // Send candidate email
+      await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${RESEND_API_KEY}`,
+        },
+        body: JSON.stringify({
+          from: `${record.company_name || "Your recruiter"} via Refevo <notifications@refevo.com>`,
+          to: [record.candidate_email],
+          reply_to: record.recruiter_email,
+          subject: "Update: your referee has confirmed your details"
+          html: candidateHtml,
+        }),
+      });
+
+      console.log("✅ Limited reference emails sent successfully");
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { "Access-Control-Allow-Origin": "*" },
+        status: 200,
+      });
+    }
+
+    // ── (Fallback for regular referee invites) ─────────────────────────────
+    const refereeLink = `${SITE}/referee/${id}`;
+    const refereeName = record.full_name || record.referee_name || "there";
+    const companyName = record.company_name || "your recruiter";
+    const candidateName = record.candidate_name || "your candidate";
+    const senderName = record.sender_name || companyName;
+
     const html = `
-      <div style="font-family:Inter,Arial,sans-serif;background-color:#F8FAFC;padding:32px;">
-        <div style="max-width:600px;margin:0 auto;background:#FFFFFF;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.05);">
-          <div style="background-color:#0A1A2F;padding:24px 32px;">
-            <h1 style="color:#FFFFFF;font-size:20px;margin:0;">Reference Request</h1>
-          </div>
-          <div style="padding:32px;">
-            <p style="font-size:16px;color:#1E293B;">Hi <strong>${full_name || "there"}</strong>,</p>
-            <p style="font-size:15px;color:#334155;line-height:1.6;">
-              You're being asked to provide a reference for a candidate as part of their employment checks.
+      <div style="font-family:'Inter',Arial,sans-serif;background-color:#F8FAFC;padding:40px;">
+        <div style="max-width:600px;margin:0 auto;background:#FFFFFF;border-radius:14px;
+                    overflow:hidden;box-shadow:0 3px 10px rgba(0,0,0,0.07);">
+          <table width="100%">
+            <tr>
+              <td style="background-color:#0A1A2F;padding:22px 32px;text-align:left;color:#fff;">
+                <div style="font-weight:700;font-size:20px;">Refevo</div>
+                <p style="color:#CBD5E1;font-size:14px;">Reference Request</p>
+              </td>
+            </tr>
+            <tr><td style="background-color:#00B3B0;height:4px;"></td></tr>
+          </table>
+
+          <div style="padding:36px 32px;">
+            <p>Hi <strong>${refereeName}</strong>,</p>
+            <p>
+              You’ve been asked by <strong>${companyName}</strong> to provide a reference for 
+              <strong>${candidateName}</strong>, who listed you as one of their referees.
             </p>
-            <p style="font-size:15px;color:#334155;line-height:1.6;">
-              Relationship: <strong>${relationship || "N/A"}</strong><br/>
-              Candidate ID: <strong>${candidate_id || "unknown"}</strong>
-            </p>
-            <p style="text-align:center;margin:32px 0;">
-              <a href="${SITE}/ref/${id}"
-                 style="background-color:#00B3B0;color:#ffffff;text-decoration:none;
-                        padding:14px 28px;border-radius:8px;font-weight:600;font-size:15px;
-                        display:inline-block;">
-                Complete Reference
+            <div style="text-align:center;margin:36px 0;">
+              <a href="${refereeLink}" style="background-color:#00B3B0;color:#FFFFFF;text-decoration:none;
+                        padding:14px 36px;border-radius:8px;font-weight:600;font-size:15px;">
+                Provide reference
               </a>
+            </div>
+            <p style="font-size:13px;color:#64748B;text-align:center;">
+              If the button doesn’t work, copy and paste this link:<br/>
+              <a href="${refereeLink}" style="color:#00B3B0;">${refereeLink}</a>
             </p>
-            <p style="font-size:13px;color:#64748B;text-align:center;margin-top:16px;">
-              If the button above doesn’t work, copy and paste this link:<br/>
-              <a href="${SITE}/ref/${id}" style="color:#00B3B0;word-break:break-all;">${SITE}/ref/${id}</a>
-            </p>
-            <hr style="border:none;border-top:1px solid #E2E8F0;margin:24px 0;">
-            <p style="font-size:13px;color:#94A3B8;">
-              Powered by <strong style="color:#00B3B0;">Refevo</strong> – Automated reference checks made simple.
-            </p>
+            <p style="font-size:14px;">Warm regards,<br/><strong>${senderName}</strong></p>
+          </div>
+
+          <div style="background-color:#F8FAFC;text-align:center;padding:20px;
+                      font-size:12px;color:#94A3B8;border-top:1px solid #E2E8F0;">
+            Powered by <strong style="color:#00B3B0;">Refevo</strong>
           </div>
         </div>
       </div>
     `;
 
-    // ── Send via Resend ────────────────────────────────────
-    const emailRes = await fetch("https://api.resend.com/emails", {
+    await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${RESEND_API_KEY}`,
@@ -84,55 +254,12 @@ serve(async (req) => {
       body: JSON.stringify({
         from: FROM_EMAIL,
         to: [email],
-        subject: "Reference Request",
+        subject: `Reference request for ${candidateName}`,
         html,
       }),
     });
 
-    const resendText = await emailRes.text();
-
-    // ── Handle Resend error ────────────────────────────────
-    if (!emailRes.ok) {
-      console.error("❌ Resend API error:", resendText);
-      const { error: insertErr } = await supabase.from("referee_email_logs").insert({
-        referee_id: id,
-        referee_email: email,
-        status: "failed",
-        error_message: resendText,
-      });
-      if (insertErr) console.error("❌ Failed to insert failed-email log:", insertErr);
-      return new Response(JSON.stringify({ error: resendText }), {
-        headers: { "Access-Control-Allow-Origin": "*" },
-        status: emailRes.status,
-      });
-    }
-
-    // ── Update referee record ──────────────────────────────
-    const { error: updateError } = await supabase
-      .from("referees")
-      .update({ email_status: "sent" })
-      .eq("id", id);
-
-    if (updateError) {
-      console.error("❌ Failed to update referee:", updateError.message);
-      await supabase.from("referee_email_logs").insert({
-        referee_id: id,
-        referee_email: email,
-        status: "sent_but_update_failed",
-        error_message: updateError.message,
-      });
-    } else {
-      console.log(`✅ Referee ${email} marked as sent`);
-      const { error: logError } = await supabase.from("referee_email_logs").insert({
-        referee_id: id,
-        referee_email: email,
-        status: "sent",
-        error_message: null,
-      });
-      if (logError) console.error("❌ Failed to insert sent log:", logError);
-    }
-
-    // ── Respond OK ─────────────────────────────────────────
+    console.log(`✅ Reference invite sent to ${email}`);
     return new Response(JSON.stringify({ success: true }), {
       headers: { "Access-Control-Allow-Origin": "*" },
       status: 200,

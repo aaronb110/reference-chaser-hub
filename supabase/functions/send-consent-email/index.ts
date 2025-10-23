@@ -57,45 +57,95 @@ const link = `${baseUrl}/add-referees/${consent_token}`;
 
 const subject = "Confirm consent & add your referees";
 const html = `
-  <div style="font-family: 'Inter', Arial, sans-serif; background-color: #F8FAFC; padding: 32px;">
-    <div style="max-width: 600px; margin: 0 auto; background: #FFFFFF; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
-      <div style="background-color: #0A1A2F; padding: 24px 32px;">
-        <h1 style="color: #FFFFFF; font-size: 20px; margin: 0;">Refevo Reference Request</h1>
-      </div>
-      <div style="padding: 32px;">
-        <p style="font-size: 16px; color: #1E293B; margin-top: 0;">Hi <strong>${name}</strong>,</p>
-        <p style="font-size: 15px; color: #334155; line-height: 1.6;">
-          ${companyName ? companyName : "Your recruiter"} is using Refevo to collect your employment references.<br/>
-          Please confirm your consent and add your referee details — it only takes a minute.
-        </p>
-        <p style="text-align: center; margin: 32px 0;">
-        <a href="${link}" 
-   style="background-color:#00B3B0; color:#ffffff;
-          text-decoration:none; padding:14px 28px;
-          border-radius:8px; font-weight:600;
-          font-size:15px; display:inline-block;">
-  Give consent & add referees
-</a>
+  <!-- Outer container -->
+  <div style="font-family:'Inter',Arial,sans-serif;background-color:#F8FAFC;padding:40px;">
+<div style="max-width:600px;margin:0 auto;background:#FFFFFF;border-radius:14px;
+            overflow:hidden;box-shadow:0 3px 10px rgba(0,0,0,0.07);font-family:'Inter',Arial,sans-serif;">
 
-<p style="font-size:13px; color:#64748B; text-align:center; margin-top:16px;">
-  If the button above doesn’t work, copy and paste this link into your browser:<br/>
-  <a href="${link}" style="color:#00B3B0; word-break:break-all;">${link}</a>
+<!-- Header -->
+<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation">
+  <tr>
+    <td style="background-color:#0A1A2F;padding:22px 32px 18px;text-align:left;">
+      <!-- Wordmark -->
+      <div style="font-weight:700;font-size:20px;line-height:24px;color:#FFFFFF;letter-spacing:0.3px;">
+        Refevo
+      </div>
+      <p style="color:#CBD5E1;font-size:14px;line-height:18px;margin:6px 0 0;">
+        Reference Request
+      </p>
+    </td>
+  </tr>
+  <!-- Full-width teal bar directly under the navy header -->
+  <tr>
+    <td style="background-color:#00B3B0;height:4px;line-height:4px;font-size:0;padding:0;margin:0;"></td>
+  </tr>
+</table>
+
+
+
+
+  <!-- Body -->
+  <div style="padding:36px 32px;">
+    <p style="font-size:16px;color:#1E293B;margin-top:0;margin-bottom:16px;">
+      Hi <strong>${name}</strong>,
+    </p>
+
+ <p style="font-size:15px;color:#475569;line-height:1.8;margin:0 0 24px;">
+  You’ve been asked by <strong>${companyName ? companyName : "your recruiter"}</strong> 
+  to complete your reference check through <strong>Refevo</strong>. 
+  Please confirm your consent and add your referee details below.
 </p>
 
 
-        <p style="font-size: 14px; color: #64748B; line-height: 1.5;">
-          Once you’ve given consent, you’ll be able to securely provide your referee details in one step.
-          We’ll notify your recruiter automatically when your information is received.
-        </p>
-        <hr style="border: none; border-top: 1px solid #E2E8F0; margin: 24px 0;">
-        <p style="font-size: 13px; color: #94A3B8;">This link is unique to you and will expire after 14 days for security.</p>
-      </div>
-      <div style="background-color: #F8FAFC; text-align: center; padding: 20px; font-size: 12px; color: #94A3B8;">
-        Powered by <strong style="color: #00B3B0;">Refevo</strong><br/>
-        <span style="font-size: 11px;">Automated reference checks made simple</span>
-      </div>
-    </div>
+<!-- CTA Button -->
+<div style="text-align:center;margin:36px 0 24px;">
+  <a href="${link}"
+     style="background-color:#00B3B0;color:#FFFFFF;text-decoration:none;
+            padding:14px 36px;border-radius:8px;font-weight:600;font-size:15px;
+            display:inline-block;box-shadow:0 3px 6px rgba(0,179,176,0.3);">
+    Give consent & add referees
+  </a>
+</div>
+
+<!-- Fallback link (clearly tied to consent) -->
+<p style="font-size:13px;color:#64748B;text-align:center;margin:0 0 32px;line-height:20px;">
+  If the button above doesn’t work, copy and paste this link into your browser:<br/>
+  <a href="${link}" style="color:#00B3B0;word-break:break-all;">${link}</a>
+</p>
+
+<!-- Divider -->
+<hr style="border:none;border-top:1px solid #E2E8F0;margin:24px 0;"/>
+
+<!-- Decline consent option -->
+<p style="font-size:13px;color:#64748B;text-align:center;margin:0 0 32px;line-height:20px;">
+  If you don’t wish to provide consent or referees, 
+  <a href="${baseUrl}/decline-consent/${consent_token}" 
+     style="color:#00B3B0;text-decoration:underline;">
+    click here
+  </a>.
+</p>
+
+
+<!-- Expiry -->
+<p style="font-size:13px;color:#64748B;text-align:center;margin:0 0 32px;line-height:20px;">
+  This link is unique to you and will expire <strong style="color:#1E293B;">after 14 days</strong> for security.
+</p>
+
+
+    <hr style="border:none;border-top:1px solid #E2E8F0;margin:24px 0;" />
+
+    <!-- GDPR -->
+    <p style="font-size:12px;color:#64748B;line-height:1.6;margin:0;">
+      By confirming, you authorise your referees to share employment information for verification purposes.
+    </p>
   </div>
+
+  <!-- Footer -->
+  <div style="background-color:#F8FAFC;text-align:center;padding:20px;
+              font-size:12px;color:#94A3B8;border-top:1px solid #E2E8F0;">
+    Powered by <strong style="color:#00B3B0;">Refevo</strong>
+  </div>
+</div>
 `;
 
 

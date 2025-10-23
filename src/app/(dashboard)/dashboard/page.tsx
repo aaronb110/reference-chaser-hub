@@ -420,22 +420,31 @@ const handleArchiveCandidate = async (candidateId: string, name: string) => {
     await supabase.auth.signOut();
     router.push("/login");
   };
+const handleTestEmail = async () => {
+  try {
+    setSending(true);
+    const { error } = await supabase.functions.invoke("send-reference-email", {
+      body: {
+        id: "test-ref-id-001", // dummy reference ID for link generation
+        full_name: "Aaron Barnett", // recipient name
+        email: "barnett.aaron@gmail.com", // your test email
+        candidate_name: "Jamie Taylor",
+        company_name: "Appetite4Work",
+        sender_name: "Aaron from Appetite4Work",
+      },
+    });
 
-  const handleTestEmail = async () => {
-    try {
-      setSending(true);
-      const { error } = await supabase.functions.invoke("send-test-email", {
-        body: { to: userEmail },
-      });
-      if (error) throw error;
-      toast.success("Test email sent!");
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to send test email");
-    } finally {
-      setSending(false);
-    }
-  };
+    if (error) throw error;
+    toast.success("Test reference email sent!");
+  } catch (err) {
+    console.error(err);
+    toast.error("Failed to send test reference email");
+  } finally {
+    setSending(false);
+  }
+};
+
+
 
 const handleUnarchiveCandidate = async (candidateId: string, name: string) => {
   if (!canManage) return;
