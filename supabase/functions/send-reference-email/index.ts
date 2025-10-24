@@ -135,6 +135,30 @@ serve(async (req) => {
     const payload = await req.json();
     const record = payload.record ?? payload;
 
+// ── Create new reference record ─────────────────────────────
+const token = crypto.randomUUID();
+
+const { data: reference, error: refError } = await supabase
+  .from("references")
+  .insert({
+    candidate_id: record.candidate_id,
+    referee_id: record.id,
+    company_id: record.company_id,
+    status: "invited",
+    token,
+    form_type: record.form_type || "employment", // 👈 add form type
+    created_by: record.created_by || null,
+  })
+  .select()
+  .single();
+
+if (refError) {
+  console.error("❌ Failed to create reference record:", refError);
+} else {
+  console.log("✅ Reference record created:", reference.id);
+}
+
+
     console.log("🧠 Reference type received:", record.reference_type);
 
     const id = record.id;
@@ -185,7 +209,7 @@ serve(async (req) => {
           from: `${record.company_name || "Your recruiter"} via Refevo <notifications@refevo.com>`,
           to: [record.candidate_email],
           reply_to: record.recruiter_email,
-          subject: "Update: your referee has confirmed your details"
+          subject: "Update: your referee has confirmed your details",
           html: candidateHtml,
         }),
       });
@@ -198,7 +222,7 @@ serve(async (req) => {
     }
 
     // ── (Fallback for regular referee invites) ─────────────────────────────
-    const refereeLink = `${SITE}/referee/${id}`;
+    const refereeLink = `${SITE}/referee/${token}`;
     const refereeName = record.full_name || record.referee_name || "there";
     const companyName = record.company_name || "your recruiter";
     const candidateName = record.candidate_name || "your candidate";

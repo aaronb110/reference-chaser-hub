@@ -247,7 +247,8 @@ if (auditErr) {
         {referees.map((r, i) => (
           <div key={i} className="border border-slate-200 rounded-xl p-4 bg-slate-50">
             <h2 className="font-medium mb-3 text-slate-700">
-              Referee {i + 1} – {r.type.charAt(0).toUpperCase() + r.type.slice(1)}
+              Referee {i + 1} – {typeof r.type === "string" ? r.type.charAt(0).toUpperCase() + r.type.slice(1) : "Unknown"}
+
             </h2>
 
             <div className="space-y-3">

@@ -110,6 +110,7 @@ export default function AddRefereeModal({
       mobile: cleaned.mobile ? ukToE164(cleaned.mobile) : null,
       relationship: cleaned.relationship,
       ref_type: selectedRefType,
+      form_type: selectedRefType?.toLowerCase() || "employment",
       template_id: candidate.template_id,
       created_by: user.id,
       company_id: companyId,
