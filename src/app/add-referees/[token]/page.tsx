@@ -78,15 +78,20 @@ console.log("📋 Loaded candidate (full):", fullCandidate);
 
 
 
-if (config?.required_refs) {
-  const total = config.required_refs;
-  const types = Array.isArray(config.ref_types)
+// ── Build referee placeholders ────────────────────────────────
+if (config) {
+  const total = config.required_refs ?? 1; // default to 1 if not set
+  const types = Array.isArray(config.ref_types) && config.ref_types.length > 0
     ? config.ref_types
     : ["reference"];
 
   const refs = Array.from({ length: total }).map((_, i) => {
-    const t = types[i % types.length];
-    const typeString = typeof t === "string" ? t : t.value || t.label || "reference";
+    const t = types[i % types.length]; // cycle through types if needed
+    const typeString =
+      typeof t === "string"
+        ? t
+        : t.value || t.label || "reference";
+
     return {
       name: "",
       email: "",
@@ -96,8 +101,10 @@ if (config?.required_refs) {
     };
   });
 
+  console.log("🧱 Generated referee placeholders:", refs);
   setReferees(refs);
 }
+
 
 
       setLoading(false);
