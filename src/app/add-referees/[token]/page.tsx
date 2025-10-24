@@ -18,6 +18,15 @@ type CandidateRow = {
   config?: any;
 };
 
+type Referee = {
+  name: string;
+  email: string;
+  type?: string;       // might come as "employment", "character", etc.
+  label?: string;      // optional alternative label
+  ref_type?: string;   // optional legacy key for safety
+};
+
+
 export default function AddRefereesPage() {
   const { token } = useParams<{ token: string }>();
   const router = useRouter();
@@ -25,12 +34,13 @@ export default function AddRefereesPage() {
   const [candidate, setCandidate] = useState<CandidateRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [referees, setReferees] = useState<
-    { name: string; email: string; type: string }[]
-  >([]);
+const [referees, setReferees] = useState<Referee[]>([]);
+
   const [shake, setShake] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirming, setConfirming] = useState(false);
+
+  
 
   // ── Verify token ───────────────────────────────────────
   useEffect(() => {
@@ -68,15 +78,18 @@ console.log("📋 Loaded candidate (full):", fullCandidate);
 
 
 
-      if (config?.ref_types?.length) {
-        setReferees(
-          config.ref_types.map((t: string) => ({
-            name: "",
-            email: "",
-            type: t,
-          }))
-        );
-      }
+if (config?.ref_types?.length) {
+  setReferees(
+    config.ref_types.map((t: any) => ({
+      name: "",
+      email: "",
+      type: typeof t === "string" ? t : t.value || t.label || "reference",
+      label: typeof t === "object" ? t.label : undefined,
+      ref_type: typeof t === "object" ? t.value : undefined,
+    }))
+  );
+}
+
       setLoading(false);
     }
 
@@ -247,7 +260,11 @@ if (auditErr) {
         {referees.map((r, i) => (
           <div key={i} className="border border-slate-200 rounded-xl p-4 bg-slate-50">
             <h2 className="font-medium mb-3 text-slate-700">
-              Referee {i + 1} – {typeof r.type === "string" ? r.type.charAt(0).toUpperCase() + r.type.slice(1) : "Unknown"}
+              Referee {i + 1} –{" "}
+{typeof r.type === "string"
+  ? r.type.charAt(0).toUpperCase() + r.type.slice(1)
+  : r.label || r.ref_type || "Reference"}
+
 
             </h2>
 
@@ -314,7 +331,9 @@ if (auditErr) {
                 >
                   <div className="font-medium">{r.name}</div>
                   <div className="text-sm text-slate-600">
-                    {r.email.toLowerCase()} — {r.type}
+                    {typeof r.email === "string" ? r.email.toLowerCase() : "Unknown email"} —{" "}
+{typeof r.type === "string" ? r.type : r.label || r.ref_type || "Reference"}
+
                   </div>
                 </li>
               ))}
