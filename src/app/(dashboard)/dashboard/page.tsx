@@ -90,7 +90,6 @@ useEffect(() => {
   async function loadProfile() {
     console.log("🚀 Starting profile load...");
     try {
-      // ── Session ──────────────────────────────────────────────────────────────
       const { data: sessionData } = await supabase.auth.getSession();
       const user = sessionData?.session?.user ?? null;
 
@@ -109,8 +108,6 @@ useEffect(() => {
       }
 
       // ── Profile ─────────────────────────────────────────────────────────────
-      
-      
       const { data: profile, error: profileErr } = await supabase
         .from("profiles")
         .select("role, company_id")
@@ -126,30 +123,29 @@ useEffect(() => {
         setCompanyId(companyIdLocal);
       }
 
-      // ── Account settings ────────────────────────────────────────────────────
-      if (companyIdLocal) {
-        const { data: settingsData } = await supabase
-          .from("account_settings")
-          .select("overdue_days, company_name")
-          .eq("company_id", companyIdLocal)
-          .maybeSingle();
-
-        if (!cancelled) setSettings(settingsData ?? { overdue_days: 7 });
+      // 🚦 Wait here until we have a valid company_id before fetching data
+      if (!companyIdLocal) {
+        console.warn("⏳ No company_id found yet, skipping data fetch.");
+        return;
       }
+
+      // ── Account settings ────────────────────────────────────────────────────
+      const { data: settingsData } = await supabase
+        .from("account_settings")
+        .select("overdue_days, company_name")
+        .eq("company_id", companyIdLocal)
+        .maybeSingle();
+
+      if (!cancelled) setSettings(settingsData ?? { overdue_days: 7 });
 
       // ── Bulk data fetch (candidates, referees, requests, templates) ─────────
       if (!cancelled) {
         const [cands, refs, reqs, tmpls] = await Promise.all([
-          
-supabase
-  .from("candidates")
-  .select(
-    "id, full_name, email, mobile, created_at, created_by, is_archived, archived_by, archived_at, email_status, status, referee_count, updated_at, consent_status, consent_at, template_id"
-  )
-  .order("created_at", { ascending: false }),
-
-
-
+  supabase
+    .from("candidate_dashboard_stats")
+    .select("*, consent_status, consent_at")
+    .eq("company_id", companyIdLocal)
+    .order("created_at", { ascending: false }),
           supabase.from("referees").select("*"),
           supabase.from("reference_requests").select("*"),
           supabase
@@ -158,8 +154,7 @@ supabase
             .order("name", { ascending: true }),
         ]);
 
-console.log("🧩 Candidates fetched:", cands.data, cands.error);
-
+        console.log("🧩 Dashboard stats fetched:", cands.data, cands.error);
 
         if (cands.data) setCandidates(cands.data as Candidate[]);
         if (refs.data) setReferees(refs.data as Referee[]);
@@ -190,6 +185,7 @@ console.log("🧩 Candidates fetched:", cands.data, cands.error);
     cancelled = true;
   };
 }, [router]);
+
 
 // ── Live Realtime Updates for Candidate Status ─────────────────────────────
 useEffect(() => {
@@ -707,9 +703,9 @@ return (
     <th className="px-4 py-3 font-semibold text-sm text-left w-[22%]">Candidate</th>
     <th className="px-4 py-3 font-semibold text-sm text-left w-[25%]">Email</th>
     <th className="px-4 py-3 font-semibold text-sm text-left w-[15%]">Mobile</th>
-    <th className="px-4 py-3 font-semibold text-sm text-left w-[18%]">
-  Status / Referees
-</th>
+   <th className="px-4 py-3 font-semibold text-sm text-left w-[14%]">Status</th>
+<th className="px-4 py-3 font-semibold text-sm text-left w-[10%]">Referees</th>
+
 
     <th className="px-4 py-3 font-semibold text-sm text-center w-[14%]">Added</th>
     <th className="px-4 py-3 font-semibold text-sm text-right w-[10%]">Action</th>
@@ -755,16 +751,26 @@ return (
         </td>
 
 {/* Status / Referees */}
-<td className="px-4 py-3 align-middle text-gray-700 w-[18%]">
-  <div className="flex flex-col">
-    <span className="font-medium capitalize">
-      {c.status?.replaceAll("_", " ") || "—"}
+{/* Status */}
+<td className="px-4 py-3 align-middle text-gray-700 w-[14%]">
+  <StatusBadge status={c.dashboard_status || c.status} />
+</td>
+
+{/* Referee Count */}
+{/* Referee Progress */}
+<td className="px-4 py-3 align-middle text-sm text-gray-700 w-[10%]">
+  <div className="flex flex-col items-start">
+    <span className="font-medium text-gray-800">
+      {c.completed_referee_count ?? 0} of {c.referee_count ?? 0}
     </span>
-    <span className="text-xs text-gray-500">
-      {c.referee_count ?? 0} referee{(c.referee_count ?? 0) === 1 ? "" : "s"}
-    </span>
+    <span className="text-xs text-gray-500">completed</span>
   </div>
 </td>
+
+
+
+
+
 
 
 {/* Added */}
@@ -776,40 +782,34 @@ return (
 
 
 
-        <td className="px-4 py-3 align-middle text-right">
-          <div className="flex items-center justify-end gap-3 space-x-3">
-            <button
-              onClick={() => setExpanded((prev) => (prev === c.id ? null : c.id))}
-              className="text-blue-600 hover:underline text-sm"
-            >
-              {expanded === c.id ? "Hide" : "View"}
-            </button>
+<td className="px-4 py-3 align-middle text-right">
+  <div className="flex items-center justify-end gap-2">
+    <button
+      onClick={() => setExpanded((prev) => (prev === c.id ? null : c.id))}
+      className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+    >
+      {expanded === c.id ? "Hide" : "View"}
+    </button>
 
-            <button
-              onClick={() => handleResendInvite(c)}
-              className="text-teal-600 hover:underline text-sm"
-            >
-              Resend
-            </button>
+    {canManage &&
+      (!c.is_archived ? (
+        <button
+          onClick={() => handleArchiveCandidate(c.id, c.full_name)}
+          className="text-red-500 hover:text-red-700 text-sm font-medium"
+        >
+          Archive
+        </button>
+      ) : (
+        <button
+          onClick={() => handleUnarchiveCandidate(c.id, c.full_name)}
+          className="text-teal-600 hover:text-teal-800 text-sm font-medium"
+        >
+          Unarchive
+        </button>
+      ))}
+  </div>
+</td>
 
-            {canManage &&
-              (!c.is_archived ? (
-                <button
-                  onClick={() => handleArchiveCandidate(c.id, c.full_name)}
-                  className="text-red-600 hover:underline text-sm"
-                >
-                  Archive
-                </button>
-              ) : (
-                <button
-                  onClick={() => handleUnarchiveCandidate(c.id, c.full_name)}
-                  className="text-teal-700 hover:underline text-sm"
-                >
-                  Unarchive
-                </button>
-              ))}
-          </div>
-        </td>
       </tr>
 
       {expanded === c.id && (

@@ -121,3 +121,13 @@ th, td {
     transform: translateX(4px);
   }
 }
+
+/* Premium-style table cell spacing for Refevo dashboard */
+td {
+  vertical-align: middle;
+}
+
+td > div.flex.flex-col {
+  padding-top: 0.2rem;
+  padding-bottom: 0.2rem;
+}

@@ -58,10 +58,6 @@ if (candidate.template_id) {
   }
 }
 
-
-
-
-
     const { data: refs, error: refError } = await supabase
   .from("referees")
   .select(`
@@ -74,13 +70,14 @@ if (candidate.template_id) {
     email_status,
     reference_requests(status)
   `)
-  .eq("candidate_id", candidate.id);
+  .eq("candidate_id", candidate.candidate_id)
 
 
-      const { data: reqs, error: reqError } = await supabase
-        .from("reference_requests")
-        .select("*")
-        .eq("candidate_id", candidate.id);
+const { data: reqs, error: reqError } = await supabase
+  .from("reference_requests")
+  .select("*")
+  .eq("candidate_id", candidate.candidate_id);
+
 
       if (refError || reqError) throw refError || reqError;
 
@@ -257,11 +254,13 @@ useEffect(() => {
 
 
           {/* ✅ Consent Status Badge */}
-          {candidate.consent_status === "granted" && (
-            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">
-              ✅ Consent Granted
-            </span>
-          )}
+{candidate.consent_status === "consented" && (
+  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">
+    ✅ Consent Granted
+  </span>
+)}
+
+
 
           {/* 🕓 Overdue Badge */}
           {anyOverdue && (

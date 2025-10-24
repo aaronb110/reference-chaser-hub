@@ -9,7 +9,7 @@ const SITE = Deno.env.get("NEXT_PUBLIC_SITE_URL") || "https://www.refevo.com";
 const FROM_EMAIL = "no-reply@refevo.com";
 
 // ── Inline Limited Reference Templates ─────────────────────
-const limitedReferenceRecruiterHTML = (record) => `
+const limitedReferenceRecruiterHTML = (record: any) => `
   <div style="font-family:'Inter',Arial,sans-serif;background-color:#F8FAFC;padding:40px;">
     <div style="max-width:600px;margin:0 auto;background:#FFFFFF;border-radius:14px;
                 overflow:hidden;box-shadow:0 3px 10px rgba(0,0,0,0.07);">
@@ -61,8 +61,7 @@ const limitedReferenceRecruiterHTML = (record) => `
   </div>
 `;
 
-
-const limitedReferenceCandidateHTML = (record) => `
+const limitedReferenceCandidateHTML = (record: any) => `
   <div style="font-family:'Inter',Arial,sans-serif;background-color:#F8FAFC;padding:40px;">
     <div style="max-width:600px;margin:0 auto;background:#FFFFFF;border-radius:14px;
                 overflow:hidden;box-shadow:0 3px 10px rgba(0,0,0,0.07);">
@@ -114,7 +113,6 @@ const limitedReferenceCandidateHTML = (record) => `
   </div>
 `;
 
-
 // ── Supabase Client ────────────────────────────────────────
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
@@ -135,31 +133,14 @@ serve(async (req) => {
     const payload = await req.json();
     const record = payload.record ?? payload;
 
-// ── Create new reference record ─────────────────────────────
-const token = crypto.randomUUID();
+    const referenceType =
+      record.reference_type ||
+      record.form_type ||
+      record.template_type ||
+      record.type ||
+      "employment";
 
-const { data: reference, error: refError } = await supabase
-  .from("references")
-  .insert({
-    candidate_id: record.candidate_id,
-    referee_id: record.id,
-    company_id: record.company_id,
-    status: "invited",
-    token,
-    form_type: record.form_type || "employment", // 👈 add form type
-    created_by: record.created_by || null,
-  })
-  .select()
-  .single();
-
-if (refError) {
-  console.error("❌ Failed to create reference record:", refError);
-} else {
-  console.log("✅ Reference record created:", reference.id);
-}
-
-
-    console.log("🧠 Reference type received:", record.reference_type);
+    console.log("🧠 Reference type received:", referenceType);
 
     const id = record.id;
     const email =
@@ -176,14 +157,13 @@ if (refError) {
       });
     }
 
-    // ── Limited Reference Email Trigger ───────────────────────
-    if (record.reference_type === "limited") {
-      console.log("📩 Limited reference detected, sending recruiter + candidate notifications...");
+    // ── Limited Reference Handling ─────────────────────────────
+    if (referenceType === "limited") {
+      console.log("📩 Limited reference detected — sending notifications...");
 
       const recruiterHtml = limitedReferenceRecruiterHTML(record);
       const candidateHtml = limitedReferenceCandidateHTML(record);
 
-      // Send recruiter email
       await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: {
@@ -198,7 +178,6 @@ if (refError) {
         }),
       });
 
-      // Send candidate email
       await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: {
@@ -221,8 +200,8 @@ if (refError) {
       });
     }
 
-    // ── (Fallback for regular referee invites) ─────────────────────────────
-    const refereeLink = `${SITE}/referee/${token}`;
+    // ── Default Reference Invite (regular referee) ────────────────
+    const refereeLink = `${SITE}/referee/${record.token}`;
     const refereeName = record.full_name || record.referee_name || "there";
     const companyName = record.company_name || "your recruiter";
     const candidateName = record.candidate_name || "your candidate";

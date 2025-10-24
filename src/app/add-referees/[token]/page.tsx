@@ -62,6 +62,26 @@ const [referees, setReferees] = useState<Referee[]>([]);
         return;
       }
 
+      // ✅ Mark consent as given (first time they open this page)
+// ✅ Only update if not already consented
+const { error: consentErr } = await supabase
+  .from("candidates")
+  .update({
+    consent_status: "consented",
+    consent_at: new Date().toISOString(),
+  })
+  .eq("consent_token", cleanToken)
+  .is("consent_at", null); // Only update if consent_at is null
+
+
+
+if (consentErr) {
+  console.error("❌ Failed to record consent:", consentErr.message);
+} else {
+  console.log("✅ Candidate consent recorded successfully.");
+}
+
+
       let config: any = null;
       if (cand.template_id) {
         const { data: cfg } = await supabase

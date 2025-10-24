@@ -9,7 +9,7 @@ export type Candidate = {
   archived_by?: string | null;
   archived_at?: string | null;
   consent_token?: string | null;
-  consent_status?: "pending" | "granted" | "declined" | null;
+  consent_status?: "pending" | "declined" | "granted" | "consented" | null | undefined;
   status?:
     | "awaiting_consent"
     | "consent_granted"
@@ -26,6 +26,9 @@ export type Candidate = {
   referee_count?: number | null;
   updated_at?: string | null;
   reference_template_id?: string | null;
+  candidate_id?: string | null;
+  dashboard_status?: string | null;
+  completed_referee_count?: number | null;
 
 };
 
