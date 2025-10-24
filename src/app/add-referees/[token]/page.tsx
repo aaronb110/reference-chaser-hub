@@ -67,11 +67,11 @@ const [referees, setReferees] = useState<Referee[]>([]);
 const { error: consentErr } = await supabase
   .from("candidates")
   .update({
-    consent_status: "consented",
+    consent_status: "granted",      // match dashboard logic
     consent_at: new Date().toISOString(),
   })
-  .eq("consent_token", cleanToken)
-  .is("consent_at", null); // Only update if consent_at is null
+  .eq("consent_token", cleanToken);
+
 
 
 

@@ -142,10 +142,28 @@ useEffect(() => {
       if (!cancelled) {
         const [cands, refs, reqs, tmpls] = await Promise.all([
   supabase
-    .from("candidate_dashboard_stats")
-    .select("*, consent_status, consent_at")
-    .eq("company_id", companyIdLocal)
-    .order("created_at", { ascending: false }),
+  .from("candidate_dashboard_stats")
+  .select(`
+    id,
+    full_name,
+    email,
+    mobile,
+    company_id,
+    status,
+    dashboard_status,
+    consent_status,
+    consent_at,
+    template_id,
+    referee_count,
+    completed_referee_count,
+    email_status,
+    is_archived,
+    created_at,
+    created_by
+  `)
+  .eq("company_id", companyIdLocal)
+  .order("created_at", { ascending: false }),
+
           supabase.from("referees").select("*"),
           supabase.from("reference_requests").select("*"),
           supabase
@@ -752,9 +770,23 @@ return (
 
 {/* Status / Referees */}
 {/* Status */}
-<td className="px-4 py-3 align-middle text-gray-700 w-[14%]">
-  <StatusBadge status={c.dashboard_status || c.status} />
+<td className="px-4 py-3 align-middle w-[14%]">
+  {c.consent_status === "granted" || c.consent_status === "consented" ? (
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">
+      ✅ Consent Granted
+    </span>
+  ) : c.consent_status === "pending" ? (
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-yellow-100 text-yellow-700">
+      ⏳ Awaiting Consent
+    </span>
+  ) : (
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700">
+      ❔ Unknown
+    </span>
+  )}
 </td>
+
+
 
 {/* Referee Count */}
 {/* Referee Progress */}

@@ -3,13 +3,12 @@
 import { useMemo, useState, useEffect, useCallback } from "react";
 import toast from "react-hot-toast";
 import AddRefereeModal from "./AddRefereeModal";
-import EditRefereeModal from "./EditRefereeModal"; // ✅ new import
+import EditRefereeModal from "./EditRefereeModal";
 import { supabase } from "@/lib/supabaseClient";
 import type { Candidate, Referee, Request, RefereeWithRequest } from "@/types/models";
 
 type Role = "user" | "manager" | "admin";
 const FOURTEEN_D_MS = 14 * 24 * 60 * 60 * 1000;
-
 
 export default function CandidateDetails({
   candidate,
@@ -26,68 +25,59 @@ export default function CandidateDetails({
   const [requests, setRequests] = useState<Request[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddRef, setShowAddRef] = useState(false);
-  const [editingReferee, setEditingReferee] = useState<RefereeWithRequest | null>(null); // ✅ new
+  const [editingReferee, setEditingReferee] = useState<RefereeWithRequest | null>(null);
   const [cooldown, setCooldown] = useState<number>(0);
   const [templateName, setTemplateName] = useState<string | null>(null);
+
   const stableCandidate = useMemo(() => candidate, [candidate.id]);
   const candidateId = useMemo(() => candidate.id, [candidate.id]);
-
-
-
 
   // ────────────────────────────── Load candidate data ──────────────────────────────
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
       console.log("🎯 Candidate ID passed to CandidateDetails:", candidate.id);
-
       console.log("🧩 Template ID on candidate:", candidate.template_id);
 
-if (candidate.template_id) {
-  const { data: templateData, error: templateError } = await supabase
-    .from("reference_templates")
-    .select("name")
-    .eq("id", candidate.template_id)
-    .maybeSingle();
+      // ✅ Load template name (optional)
+      if (candidate.template_id) {
+        const { data: templateData, error: templateError } = await supabase
+          .from("reference_templates")
+          .select("name")
+          .eq("id", candidate.template_id)
+          .maybeSingle();
 
-  if (templateError) {
-    console.error("Failed to load template name:", templateError.message);
-  } else if (templateData && templateData.name !== templateName) {
-    setTemplateName(templateData.name);
-    console.log("📄 Template name fetched:", templateData.name);
-  }
-}
+        if (templateError) {
+          console.error("Failed to load template name:", templateError.message);
+        } else if (templateData && templateData.name !== templateName) {
+          setTemplateName(templateData.name);
+          console.log("📄 Template name fetched:", templateData.name);
+        }
+      }
 
-    const { data: refs, error: refError } = await supabase
-  .from("referees")
-  .select(`
-    id,
-    candidate_id,
-    name,
-    email,
-    mobile,
-    relationship,
-    email_status,
-    reference_requests(status)
-  `)
-  .eq("candidate_id", candidate.candidate_id)
+      // ✅ FIX: use candidate.id instead of candidate.candidate_id
+      const { data: refs, error: refError } = await supabase
+        .from("referees")
+        .select(`
+          id,
+          candidate_id,
+          name,
+          email,
+          mobile,
+          relationship,
+          email_status,
+          status
+        `)
+        .eq("candidate_id", candidate.id);
 
-
-const { data: reqs, error: reqError } = await supabase
-  .from("reference_requests")
-  .select("*")
-  .eq("candidate_id", candidate.candidate_id);
-
+      const { data: reqs, error: reqError } = await supabase
+        .from("reference_requests")
+        .select("*")
+        .eq("candidate_id", candidate.id);
 
       if (refError || reqError) throw refError || reqError;
 
       console.log("📋 Referees fetched:", refs);
-      if (refs && refs.length > 0) {
-        refs.forEach((r) =>
-          console.log(`Referee: ${r.name} (${r.email}) → Status:`, r.reference_requests)
-        );
-      }
-
       setReferees(refs || []);
       setRequests(reqs || []);
     } catch (err) {
@@ -96,71 +86,63 @@ const { data: reqs, error: reqError } = await supabase
     } finally {
       setLoading(false);
     }
-  }, [candidate.id]);
+  }, [candidate.id, candidate.template_id, templateName]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
   // ────────────────────────────── Realtime sync ──────────────────────────────
-useEffect(() => {
-  if (!candidateId) return;
+  useEffect(() => {
+    if (!candidateId) return;
 
-  const channel = supabase
-    .channel(`realtime:candidate:${candidateId}`)
-    .on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'referees',
-        filter: `candidate_id=eq.${candidateId}`, // only this candidate’s refs
-      },
-      (payload) => {
-        const next = payload.new as Partial<Referee>;
-        const prevOld = payload.old as Partial<Referee> | undefined;
+    const channel = supabase
+      .channel(`realtime:candidate:${candidateId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "referees",
+          filter: `candidate_id=eq.${candidateId}`,
+        },
+        (payload) => {
+          const next = payload.new as Partial<Referee>;
+          const prevOld = payload.old as Partial<Referee> | undefined;
 
-        // Helpful logs while we test
-        console.log('📡 Referee realtime:', payload.eventType, {
-          id: next?.id ?? prevOld?.id,
-          email_status: next?.email_status,
-        });
+          console.log("📡 Referee realtime:", payload.eventType, {
+            id: next?.id ?? prevOld?.id,
+            email_status: next?.email_status,
+            status: next?.status,
+          });
 
-        setReferees((prev) => {
-          if (payload.eventType === 'INSERT') {
-            // avoid duplicates
-            if (prev.some((r) => r.id === next.id)) return prev;
-            return [
-              // preserve shape w/ empty join until next fetch
-              { ...(next as RefereeWithRequest), reference_requests: [] },
-              ...prev,
-            ];
-          }
+          setReferees((prev) => {
+            if (payload.eventType === "INSERT") {
+              if (prev.some((r) => r.id === next.id)) return prev;
+              return [{ ...(next as RefereeWithRequest) }, ...prev];
+            }
 
-          if (payload.eventType === 'UPDATE') {
-            // merge fields (preserve joined data like reference_requests)
-            return prev.map((r) =>
-              r.id === next.id ? { ...r, ...next } : r
-            );
-          }
+            if (payload.eventType === "UPDATE") {
+              return prev.map((r) =>
+                r.id === next.id ? { ...r, ...next } : r
+              );
+            }
 
-          if (payload.eventType === 'DELETE') {
-            const deletedId = prevOld?.id;
-            return deletedId ? prev.filter((r) => r.id !== deletedId) : prev;
-          }
+            if (payload.eventType === "DELETE") {
+              const deletedId = prevOld?.id;
+              return deletedId ? prev.filter((r) => r.id !== deletedId) : prev;
+            }
 
-          return prev;
-        });
-      }
-    )
-    .subscribe();
+            return prev;
+          });
+        }
+      )
+      .subscribe();
 
-  return () => {
-    supabase.removeChannel(channel);
-  };
-}, [candidateId]);
-
-
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [candidateId]);
 
   // ────────────────────────────── Countdown for resend ──────────────────────────────
   useEffect(() => {
@@ -233,8 +215,7 @@ useEffect(() => {
 
   // ────────────────────────────── Helper: Status badge ──────────────────────────────
   const getRefStatus = (r: RefereeWithRequest) => {
-    const joined = r.reference_requests?.[0]?.status;
-    const status = joined || r.status || "waiting";
+    const status = r.status || "waiting";
     return status.toLowerCase();
   };
 
@@ -246,23 +227,33 @@ useEffect(() => {
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm text-gray-500">Candidate:</span>
           <span className="font-medium">{candidate.full_name}</span>
-          {templateName && (
-  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700">
-    📋 {templateName}
-  </span>
-)}
 
+          {templateName && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700">
+              📋 {templateName}
+            </span>
+          )}
 
           {/* ✅ Consent Status Badge */}
-{candidate.consent_status === "consented" && (
+      {candidate.consent_status === "granted" ? (
   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">
     ✅ Consent Granted
   </span>
+) : candidate.consent_status === "declined" ? (
+  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700">
+    ❌ Declined Consent
+  </span>
+) : candidate.consent_status === "pending" ? (
+  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-yellow-100 text-yellow-700">
+    ⏳ Awaiting Consent
+  </span>
+) : (
+  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700">
+    ❔ Unknown
+  </span>
 )}
 
 
-
-          {/* 🕓 Overdue Badge */}
           {anyOverdue && (
             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700">
               🕓 Overdue
@@ -300,19 +291,18 @@ useEffect(() => {
       {/* Referees table */}
       <div className="mt-2 -mx-4 sm:-mx-6 md:-mx-8 overflow-x-auto">
         <table className="min-w-full text-sm border-t border-gray-200">
-
-<thead className="bg-gray-100 text-gray-700">
-  <tr>
-    <th className="py-2 px-3 text-left font-medium">Referee</th>
-    <th className="py-2 px-3 text-left font-medium">Email</th>
-    <th className="py-2 px-3 text-left font-medium">Mobile</th>
-    <th className="py-2 px-3 text-left font-medium">Relationship</th>
-    <th className="py-2 px-3 text-left font-medium">Status</th>
-    <th className="py-2 px-3 text-left font-medium">Email Status</th>
-    <th className="py-2 px-3 text-left font-medium">Resends</th>
-    <th className="py-2 px-3 text-right font-medium">Actions</th>
-  </tr>
-</thead>
+          <thead className="bg-gray-100 text-gray-700">
+            <tr>
+              <th className="py-2 px-3 text-left font-medium">Referee</th>
+              <th className="py-2 px-3 text-left font-medium">Email</th>
+              <th className="py-2 px-3 text-left font-medium">Mobile</th>
+              <th className="py-2 px-3 text-left font-medium">Relationship</th>
+              <th className="py-2 px-3 text-left font-medium">Status</th>
+              <th className="py-2 px-3 text-left font-medium">Email Status</th>
+              <th className="py-2 px-3 text-left font-medium">Resends</th>
+              <th className="py-2 px-3 text-right font-medium">Actions</th>
+            </tr>
+          </thead>
 
           <tbody>
             {loading ? (
@@ -328,90 +318,90 @@ useEffect(() => {
                 </td>
               </tr>
             ) : (
-  referees.map((r) => {
-    const req = requests.find((q) => q.referee_id === r.id);
+              referees.map((r) => {
+                const req = requests.find((q) => q.referee_id === r.id);
+                const emailStatusColors: Record<string, string> = {
+                  pending: "bg-gray-100 text-gray-700",
+                  sent: "bg-indigo-100 text-indigo-700",
+                  delivered: "bg-green-100 text-green-700",
+                  bounced: "bg-red-100 text-red-700",
+                };
 
-    // Email status color map
-    const emailStatusColors: Record<string, string> = {
-      pending: "bg-gray-100 text-gray-700",
-      sent: "bg-indigo-100 text-indigo-700",
-      delivered: "bg-green-100 text-green-700",
-      bounced: "bg-red-100 text-red-700",
-    };
+                const emailStatus = r.email_status || "pending";
 
-    const emailStatus = r.email_status || "pending";
+                const statusColors: Record<string, string> = {
+                  waiting: "bg-yellow-100 text-yellow-800",
+                  invited: "bg-yellow-100 text-yellow-800",
+                  sent: "bg-green-100 text-green-800",
+                  completed: "bg-blue-100 text-blue-800",
+                  declined: "bg-red-100 text-red-800",
+                  limited: "bg-orange-100 text-orange-800",
+                };
 
-    return (
-      <tr key={r.id} className="border-b">
-        <td className="p-3">{r.name}</td>
-        <td className="p-3">{r.email}</td>
-        <td className="p-3 text-gray-600">{r.mobile || "—"}</td>
-        <td className="p-3 text-gray-600">{r.relationship || "—"}</td>
+                return (
+                  <tr key={r.id} className="border-b">
+                    <td className="p-3">{r.name}</td>
+                    <td className="p-3">{r.email}</td>
+                    <td className="p-3 text-gray-600">{r.mobile || "—"}</td>
+                    <td className="p-3 text-gray-600">{r.relationship || "—"}</td>
 
-        {/* Existing referee status pill */}
-        <td className="p-3">
-          <span
-            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs ${
-              {
-                waiting: "bg-yellow-100 text-yellow-800",
-                sent: "bg-green-100 text-green-800",
-                completed: "bg-blue-100 text-blue-800",
-                declined: "bg-red-100 text-red-800",
-              }[getRefStatus(r)] ?? "bg-slate-100 text-slate-700"
-            }`}
-          >
-            {getRefStatus(r).charAt(0).toUpperCase() +
-              getRefStatus(r).slice(1)}
-          </span>
-        </td>
+                    <td className="p-3">
+                      <span
+                        className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs ${
+                          statusColors[getRefStatus(r)] ??
+                          "bg-slate-100 text-slate-700"
+                        }`}
+                      >
+                        {getRefStatus(r).charAt(0).toUpperCase() +
+                          getRefStatus(r).slice(1)}
+                      </span>
+                    </td>
 
-        {/* 🆕 New Email Status pill */}
-        <td className="p-3">
-          <span
-            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs ${
-              emailStatusColors[emailStatus] ?? "bg-gray-100 text-gray-700"
-            }`}
-          >
-            {emailStatus.charAt(0).toUpperCase() + emailStatus.slice(1)}
-          </span>
-        </td>
+                    <td className="p-3">
+                      <span
+                        className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs ${
+                          emailStatusColors[emailStatus] ??
+                          "bg-gray-100 text-gray-700"
+                        }`}
+                      >
+                        {emailStatus.charAt(0).toUpperCase() +
+                          emailStatus.slice(1)}
+                      </span>
+                    </td>
 
-        <td className="p-3 text-gray-600">{req?.resend_count_14d ?? 0}</td>
+                    <td className="p-3 text-gray-600">{req?.resend_count_14d ?? 0}</td>
 
-        <td className="p-3 text-right">
-          <button
-            onClick={() => setEditingReferee(r)}
-            className="text-indigo-600 hover:underline text-sm"
-          >
-            Edit
-          </button>
-        </td>
-      </tr>
-    );
-  })
-)}
-
+                    <td className="p-3 text-right">
+                      <button
+                        onClick={() => setEditingReferee(r)}
+                        className="text-indigo-600 hover:underline text-sm"
+                      >
+                        Edit
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
       </div>
 
-{/* Add Referee Modal */}
-{showAddRef && (
- <AddRefereeModal
-  candidate={stableCandidate}
-    companyId={companyId}
-    onClose={() => setShowAddRef(false)}
-    onSaved={async () => {
-      toast.success("Referee added.");
-      setShowAddRef(false);
-      await loadData();
-    }}
-  />
-)}
+      {/* Add Referee Modal */}
+      {showAddRef && (
+        <AddRefereeModal
+          candidate={stableCandidate}
+          companyId={companyId}
+          onClose={() => setShowAddRef(false)}
+          onSaved={async () => {
+            toast.success("Referee added.");
+            setShowAddRef(false);
+            await loadData();
+          }}
+        />
+      )}
 
-
-
-      {/* ✅ Edit Referee Modal */}
+      {/* Edit Referee Modal */}
       {editingReferee && (
         <EditRefereeModal
           referee={editingReferee}

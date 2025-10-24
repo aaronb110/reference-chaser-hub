@@ -57,7 +57,7 @@ export type Referee = {
 };
 
 export type RefereeWithRequest = Referee & {
-  reference_requests?: { status: string }[];
+  reference_responses?: { status: string }[];
 };
 
 
