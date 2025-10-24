@@ -78,17 +78,27 @@ console.log("📋 Loaded candidate (full):", fullCandidate);
 
 
 
-if (config?.ref_types?.length) {
-  setReferees(
-    config.ref_types.map((t: any) => ({
+if (config?.required_refs) {
+  const total = config.required_refs;
+  const types = Array.isArray(config.ref_types)
+    ? config.ref_types
+    : ["reference"];
+
+  const refs = Array.from({ length: total }).map((_, i) => {
+    const t = types[i % types.length];
+    const typeString = typeof t === "string" ? t : t.value || t.label || "reference";
+    return {
       name: "",
       email: "",
-      type: typeof t === "string" ? t : t.value || t.label || "reference",
+      type: typeString,
       label: typeof t === "object" ? t.label : undefined,
       ref_type: typeof t === "object" ? t.value : undefined,
-    }))
-  );
+    };
+  });
+
+  setReferees(refs);
 }
+
 
       setLoading(false);
     }
@@ -237,9 +247,12 @@ if (auditErr) {
               Requires{" "}
               <span className="font-medium">{candidate.config.required_refs}</span>{" "}
               referee(s) — types:{" "}
-              <span className="font-medium">
-                {candidate.config.ref_types.join(", ")}
-              </span>
+             <span className="font-medium">
+  {candidate.config.ref_types
+    .map((t: any) => (typeof t === "string" ? t : t.label || t.value))
+    .join(", ")}
+</span>
+
             </p>
             {candidate.reference_type === "time_based" &&
               candidate.reference_years_required && (
