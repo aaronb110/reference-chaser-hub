@@ -66,7 +66,8 @@ export default async function RefereePage(props: { params: { token: string } }) 
     if (!c) return null;
     if (Array.isArray(c)) return c[0]?.id || null;
     // fallback if Supabase ever returns a single object
-    // @ts-expect-error
+    // @ts-expect-error – temporary type mismatch, safe to ignore
+
     return c.id || null;
   })();
 
