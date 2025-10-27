@@ -17,11 +17,9 @@ type RefereeRow = {
   candidate: Candidate[] | null;
 };
 
-export default async function RefereePage({
-  params,
-}: {
-  params: { token: string };
-}) {
+// ✅ Explicitly drop Next.js PageProps inference by typing props as `any`
+export default async function RefereePage(props: any) {
+  const params = props.params as { token: string };
   const supabase = await createServerSupabase();
 
   // 🔹 1. Get referee data
@@ -68,7 +66,7 @@ export default async function RefereePage({
     const c = referee.candidate;
     if (!c) return null;
     if (Array.isArray(c)) return c[0]?.id || null;
-    // @ts-expect-error - Supabase can return an object or array, ignore mismatch
+    // @ts-expect-error - Supabase can return object or array, safe to ignore
     return c.id || null;
   })();
 
@@ -88,7 +86,6 @@ export default async function RefereePage({
           .
         </p>
 
-        {/* ✅ Use the helper here */}
         <RefereeFormDynamic
           templateFields={templateFields}
           refereeId={referee.id}
