@@ -31,6 +31,8 @@ export default function CandidateDetails({
 
   const stableCandidate = useMemo(() => candidate, [candidate.id]);
   const candidateId = useMemo(() => candidate.id, [candidate.id]);
+  const [showArchivedRefs, setShowArchivedRefs] = useState(false);
+
 
   // ────────────────────────────── Load candidate data ──────────────────────────────
   const loadData = useCallback(async () => {
@@ -56,21 +58,23 @@ export default function CandidateDetails({
       }
 
       // ✅ Include is_archived for new feature
-      const { data: refs, error: refError } = await supabase
-        .from("referees")
-        .select(`
-          id,
-          candidate_id,
-          name,
-          email,
-          mobile,
-          relationship,
-          email_status,
-          status,
-          is_archived,
-          archived_at
-        `)
-        .eq("candidate_id", candidate.id);
+  const { data: refs, error: refError } = await supabase
+  .from("referees")
+  .select(`
+    id,
+    candidate_id,
+    name,
+    email,
+    mobile,
+    relationship,
+    email_status,
+    status,
+    is_archived,
+    archived_at
+  `)
+  .eq("candidate_id", candidate.id)
+  .is("is_archived", false);
+
 
       const { data: reqs, error: reqError } = await supabase
         .from("reference_requests")
@@ -246,73 +250,93 @@ export default function CandidateDetails({
     return status.toLowerCase();
   };
 
+  // 🎛 Filter referees depending on toggle
+const visibleRefs = showArchivedRefs
+  ? referees
+  : referees.filter((r) => !r.is_archived);
+
   // ────────────────────────────── Render ──────────────────────────────
   return (
     <div className="bg-gray-50 border-t border-gray-200 px-6 py-3">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm text-gray-500">Candidate:</span>
-          <span className="font-medium">{candidate.full_name}</span>
+{/* Header */}
+<div className="flex flex-wrap items-center justify-between w-[calc(100%+3rem)] -mx-6 px-6 gap-3 py-1">
 
-          {templateName && (
-            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700">
-              📋 {templateName}
-            </span>
-          )}
+  {/* LEFT: Candidate info */}
+  <div className="flex items-center gap-2 flex-wrap min-w-0">
+    <span className="text-sm text-gray-500 shrink-0">Candidate:</span>
+    <span className="font-medium truncate">{candidate.full_name}</span>
 
-          {/* ✅ Consent Status Badge */}
-          {candidate.consent_status === "granted" ? (
-            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">
-              ✅ Consent Granted
-            </span>
-          ) : candidate.consent_status === "declined" ? (
-            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700">
-              ❌ Declined Consent
-            </span>
-          ) : candidate.consent_status === "pending" ? (
-            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-yellow-100 text-yellow-700">
-              ⏳ Awaiting Consent
-            </span>
-          ) : (
-            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700">
-              ❔ Unknown
-            </span>
-          )}
+    {templateName && (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700 whitespace-nowrap">
+        📋 {templateName}
+      </span>
+    )}
 
-          {anyOverdue && (
-            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700">
-              🕓 Overdue
-            </span>
-          )}
-        </div>
+    {/* ✅ Consent Status Badge */}
+    {candidate.consent_status === "granted" ? (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700 whitespace-nowrap">
+        ✅ Consent Granted
+      </span>
+    ) : candidate.consent_status === "declined" ? (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700 whitespace-nowrap">
+        ❌ Declined Consent
+      </span>
+    ) : candidate.consent_status === "pending" ? (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-yellow-100 text-yellow-700 whitespace-nowrap">
+        ⏳ Awaiting Consent
+      </span>
+    ) : (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700 whitespace-nowrap">
+        ❔ Unknown
+      </span>
+    )}
+  </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowAddRef(true)}
-            className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-700"
-          >
-            + Add Referee
-          </button>
+  {/* RIGHT: Toggle + Buttons */}
+  <div className="flex items-center gap-3 flex-wrap justify-end flex-grow">
+    <div className="flex items-center gap-2">
+      <span className="text-sm text-gray-600">Show archived referees</span>
+      <button
+        onClick={() => setShowArchivedRefs(!showArchivedRefs)}
+        className={`relative inline-flex h-5 w-10 rounded-full transition-colors duration-300 ${
+          showArchivedRefs ? "bg-teal-500" : "bg-gray-300"
+        }`}
+      >
+        <span
+          className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform duration-300 ${
+            showArchivedRefs ? "translate-x-5" : "translate-x-0"
+          }`}
+        />
+      </button>
+    </div>
 
-          <button
-            onClick={handleResendAll}
-            disabled={cooldown > 0 || (!canResendNow && role === "user")}
-            className={`px-3 py-1.5 rounded-lg text-sm ${
-              cooldown > 0 || (!canResendNow && role === "user")
-                ? "bg-gray-200 text-gray-600 cursor-not-allowed"
-                : "bg-yellow-500 text-white hover:bg-yellow-600"
-            }`}
-            title={
-              role === "user"
-                ? "Max 3 resends within 14 days"
-                : "No limit (manager/admin)"
-            }
-          >
-            {cooldown > 0 ? `Retry in ${cooldown}s` : "Resend All Pending"}
-          </button>
-        </div>
-      </div>
+    <button
+      onClick={() => setShowAddRef(true)}
+      className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-700 whitespace-nowrap"
+    >
+      + Add Referee
+    </button>
+
+    <button
+      onClick={handleResendAll}
+      disabled={cooldown > 0 || (!canResendNow && role === "user")}
+      className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap ${
+        cooldown > 0 || (!canResendNow && role === "user")
+          ? "bg-gray-200 text-gray-600 cursor-not-allowed"
+          : "bg-yellow-500 text-white hover:bg-yellow-600"
+      }`}
+      title={
+        role === "user"
+          ? "Max 3 resends within 14 days"
+          : "No limit (manager/admin)"
+      }
+    >
+      {cooldown > 0 ? `Retry in ${cooldown}s` : "Resend All Pending"}
+    </button>
+  </div>
+</div>
+
+
 
       {/* Referees table */}
       <div className="mt-2 -mx-4 sm:-mx-6 md:-mx-8 overflow-x-auto">
@@ -331,97 +355,100 @@ export default function CandidateDetails({
           </thead>
 
           <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan={8} className="p-6 text-center text-gray-500 italic">
-                  Loading referees…
-                </td>
-              </tr>
-            ) : referees.length === 0 ? (
-              <tr>
-                <td colSpan={8} className="p-6 text-center text-gray-500">
-                  No referees yet.
-                </td>
-              </tr>
-            ) : (
-              referees.map((r) => {
-                const req = requests.find((q) => q.referee_id === r.id);
-                const emailStatusColors: Record<string, string> = {
-                  pending: "bg-gray-100 text-gray-700",
-                  sent: "bg-indigo-100 text-indigo-700",
-                  delivered: "bg-green-100 text-green-700",
-                  bounced: "bg-red-100 text-red-700",
-                };
+  {loading ? (
+    <tr>
+      <td colSpan={8} className="p-6 text-center text-gray-500 italic">
+        Loading referees…
+      </td>
+    </tr>
+  ) : visibleRefs.length === 0 ? (
+    <tr>
+      <td colSpan={8} className="p-6 text-center text-gray-500">
+        No referees yet.
+      </td>
+    </tr>
+  ) : (
+    visibleRefs.map((r) => {
+      const req = requests.find((q) => q.referee_id === r.id);
 
-                const emailStatus = r.email_status || "pending";
-                const statusColors: Record<string, string> = {
-                  waiting: "bg-yellow-100 text-yellow-800",
-                  invited: "bg-yellow-100 text-yellow-800",
-                  sent: "bg-green-100 text-green-800",
-                  completed: "bg-blue-100 text-blue-800",
-                  declined: "bg-red-100 text-red-800",
-                  limited: "bg-orange-100 text-orange-800",
-                };
+      const emailStatusColors: Record<string, string> = {
+        pending: "bg-gray-100 text-gray-700",
+        sent: "bg-indigo-100 text-indigo-700",
+        delivered: "bg-green-100 text-green-700",
+        bounced: "bg-red-100 text-red-700",
+      };
 
-                return (
-                  <tr key={r.id} className="border-b">
-                    <td className="p-3">{r.name}</td>
-                    <td className="p-3">{r.email}</td>
-                    <td className="p-3 text-gray-600">{r.mobile || "—"}</td>
-                    <td className="p-3 text-gray-600">{r.relationship || "—"}</td>
+      const emailStatus = r.email_status || "pending";
+      const statusColors: Record<string, string> = {
+        waiting: "bg-yellow-100 text-yellow-800",
+        invited: "bg-yellow-100 text-yellow-800",
+        sent: "bg-green-100 text-green-800",
+        completed: "bg-blue-100 text-blue-800",
+        declined: "bg-red-100 text-red-800",
+        limited: "bg-orange-100 text-orange-800",
+      };
 
-                    <td className="p-3">
-                      <span
-                        className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs ${
-                          statusColors[getRefStatus(r)] ??
-                          "bg-slate-100 text-slate-700"
-                        }`}
-                      >
-                        {getRefStatus(r).charAt(0).toUpperCase() +
-                          getRefStatus(r).slice(1)}
-                      </span>
-                      {r.is_archived && (
-                        <span className="ml-2 text-xs text-gray-500 italic">(Archived)</span>
-                      )}
-                    </td>
+      return (
+        <tr key={r.id} className="border-b">
+          <td className="p-3">{r.name}</td>
+          <td className="p-3">{r.email}</td>
+          <td className="p-3 text-gray-600">{r.mobile || "—"}</td>
+          <td className="p-3 text-gray-600">{r.relationship || "—"}</td>
 
-                    <td className="p-3">
-                      <span
-                        className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs ${
-                          emailStatusColors[emailStatus] ??
-                          "bg-gray-100 text-gray-700"
-                        }`}
-                      >
-                        {emailStatus.charAt(0).toUpperCase() +
-                          emailStatus.slice(1)}
-                      </span>
-                    </td>
-
-                    <td className="p-3 text-gray-600">{req?.resend_count_14d ?? 0}</td>
-
-                    <td className="p-3 text-right space-x-3">
-                      {/* ✅ Archive Button */}
-                      {!r.is_archived && (
-                        <button
-                          onClick={() => handleArchive(r.id)}
-                          className="text-red-600 hover:underline text-sm"
-                        >
-                          Archive
-                        </button>
-                      )}
-
-                      <button
-                        onClick={() => setEditingReferee(r)}
-                        className="text-indigo-600 hover:underline text-sm"
-                      >
-                        Edit
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })
+          <td className="p-3">
+            <span
+              className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs ${
+                statusColors[getRefStatus(r)] ?? "bg-slate-100 text-slate-700"
+              }`}
+            >
+              {getRefStatus(r).charAt(0).toUpperCase() +
+                getRefStatus(r).slice(1)}
+            </span>
+            {r.is_archived && (
+              <span className="ml-2 text-xs text-gray-500 italic">
+                (Archived)
+              </span>
             )}
-          </tbody>
+          </td>
+
+          <td className="p-3">
+            <span
+              className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs ${
+                emailStatusColors[emailStatus] ??
+                "bg-gray-100 text-gray-700"
+              }`}
+            >
+              {emailStatus.charAt(0).toUpperCase() + emailStatus.slice(1)}
+            </span>
+          </td>
+
+          <td className="p-3 text-gray-600">
+            {req?.resend_count_14d ?? 0}
+          </td>
+
+          <td className="p-3 text-right space-x-3">
+            {!r.is_archived && (
+              <button
+                onClick={() => handleArchive(r.id)}
+                className="text-red-600 hover:underline text-sm"
+              >
+                Archive
+              </button>
+            )}
+
+            <button
+              onClick={() => setEditingReferee(r)}
+              className="text-indigo-600 hover:underline text-sm"
+            >
+              Edit
+            </button>
+          </td>
+        </tr>
+      );
+    })
+  )}
+</tbody>
+
         </table>
       </div>
 

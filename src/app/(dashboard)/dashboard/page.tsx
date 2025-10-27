@@ -3,15 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
+import React from "react";
 import { supabase } from "@/lib/supabaseClient";
 import CandidateDetails from "./components/CandidateDetails";
-import type { Candidate, Referee, Request } from "@/types/models";
-import React from "react";
-import { customAlphabet } from "nanoid";
 import StatusBadge from "@/components/StatusBadge";
+import { customAlphabet } from "nanoid";
 import { trimAll, toTitleCaseName, normaliseEmail } from "@/utils/normalise";
-
-
+import type { Candidate, Referee, Request } from "@/types/models"; // ✅ unified import
 
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -23,12 +21,53 @@ const formatDate = (value?: string | null) => {
   return new Date(value).toLocaleDateString("en-GB");
 };
 
-
+// ── Local Roles ───────────────────────────────────────────────────────────────
 type Role = "user" | "manager" | "admin";
+
+function getDeliveryStatus(candidate: Candidate): {
+  label: string;
+  color: string;
+  emoji: string;
+  tooltip: string;
+} {
+  switch (candidate.consent_status) {
+    case "granted":
+      return {
+        label: "Consent Granted",
+        color: "green",
+        emoji: "✅",
+        tooltip: candidate.consent_at
+          ? `Granted on ${new Date(candidate.consent_at).toLocaleDateString("en-GB")}`
+          : "Candidate granted consent",
+      };
+    case "declined":
+      return {
+        label: "Declined",
+        color: "red",
+        emoji: "❌",
+        tooltip: "Candidate declined consent for references",
+      };
+    case "pending":
+      return {
+        label: "Awaiting Consent",
+        color: "yellow",
+        emoji: "⏳",
+        tooltip: "Candidate has not yet responded",
+      };
+    default:
+      return {
+        label: "Unknown",
+        color: "gray",
+        emoji: "❔",
+        tooltip: "Consent status not set",
+      };
+  }
+}
 
 export default function DashboardPage() {
   const router = useRouter();
   console.log("✅ DashboardPage component rendered");
+
 
   // ── State ───────────────────────────────────────────────────────────────────
   const [companyId, setCompanyId] = useState<string | null>(null);
@@ -42,10 +81,8 @@ export default function DashboardPage() {
   const [requests, setRequests] = useState<Request[]>([]);
   const [settings, setSettings] = useState<{ overdue_days: number; company_name?: string } | null>(null);
 
-
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
-
   const [showModal, setShowModal] = useState(false);
   const [sending, setSending] = useState(false);
   const [newCandidate, setNewCandidate] = useState({
@@ -54,34 +91,27 @@ export default function DashboardPage() {
     mobile: "",
     template_id: "",
   });
-  
-const [sortBy, setSortBy] = useState<
-  "created_desc" | "created_asc" | "name_asc" | "name_desc"
->("created_desc");
-const [viewMode, setViewMode] = useState<"mine" | "others" | "all">("mine");
-const canManage = role === "manager" || role === "admin"; 
-const [showArchived, setShowArchived] = useState(false); // managers only
-const nano = customAlphabet("123456789ABCDEFGHJKLMNPQRSTUVWXYZ", 20);
 
-// Reference templates for the modal dropdown
-const [templates, setTemplates] = useState<
-  { id: string; name: string; description?: string | null }[]
->([]);
-const [adding, setAdding] = useState(false);
+  const [sortBy, setSortBy] = useState<
+    "created_desc" | "created_asc" | "name_asc" | "name_desc"
+  >("created_desc");
+  const [viewMode, setViewMode] = useState<"mine" | "others" | "all">("mine");
+  const canManage = role === "manager" || role === "admin";
+  const [showArchived, setShowArchived] = useState(false); // managers only
+  const nano = customAlphabet("123456789ABCDEFGHJKLMNPQRSTUVWXYZ", 20);
 
-// Pagination
-const [currentPage, setCurrentPage] = useState(1);
-const pageSize = 15; // 👈 change to 20 if preferred
+  // Reference templates for the modal dropdown
+  const [templates, setTemplates] = useState<
+    { id: string; name: string; description?: string | null }[]
+  >([]);
+  const [adding, setAdding] = useState(false);
 
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 15; // 👈 change to 20 if preferred
 
-// Track recently changed or new candidates for highlight animation
-const [highlightedRows, setHighlightedRows] = useState<Record<string, "update" | "new">>({});
-
-
-
-
-
-
+  // Track recently changed or new candidates for highlight animation
+  const [highlightedRows, setHighlightedRows] = useState<Record<string, "update" | "new">>({});
 
 
 useEffect(() => {
@@ -130,51 +160,105 @@ useEffect(() => {
       }
 
       // ── Account settings ────────────────────────────────────────────────────
-      const { data: settingsData } = await supabase
-        .from("account_settings")
-        .select("overdue_days, company_name")
-        .eq("company_id", companyIdLocal)
-        .maybeSingle();
-
-      if (!cancelled) setSettings(settingsData ?? { overdue_days: 7 });
+// 💤 Skipping account_settings for now — not in use yet
+const settingsData = {
+  overdue_days: null,
+  company_name: "Demo Company",
+};
 
       // ── Bulk data fetch (candidates, referees, requests, templates) ─────────
       if (!cancelled) {
-        const [cands, refs, reqs, tmpls] = await Promise.all([
-  supabase
-  .from("candidate_dashboard_stats")
-  .select(`
-    id,
-    full_name,
-    email,
-    mobile,
-    company_id,
-    status,
-    dashboard_status,
-    consent_status,
-    consent_at,
-    template_id,
-    referee_count,
-    completed_referee_count,
-    email_status,
-    is_archived,
-    created_at,
-    created_by
-  `)
-  .eq("company_id", companyIdLocal)
-  .order("created_at", { ascending: false }),
+const [cands, refs, reqs, tmpls] = await Promise.all([
 
-          supabase.from("referees").select("*"),
-          supabase.from("reference_requests").select("*"),
-          supabase
-            .from("reference_templates")
-            .select("id, name, description")
-            .order("name", { ascending: true }),
-        ]);
+  
+  // 1️⃣ Main candidate view
+  supabase
+    .from("candidate_dashboard_stats")
+    .select(`
+      id,
+      full_name,
+      email,
+      mobile,
+      company_id,
+      status,
+      dashboard_status,
+      consent_status,
+      consent_at,
+      template_id,
+      referee_count,
+      completed_referee_count,
+      email_status,
+      is_archived,
+      created_at,
+      created_by
+    `)
+    .eq("company_id", companyIdLocal)
+    .order("created_at", { ascending: false }),
+
+// 2️⃣ Fetch only active referees (exclude archived)
+supabase
+  .from("referees")
+  .select("id, candidate_id, email_status, is_archived")
+  .is("is_archived", false),
+
+
+  // 3️⃣ Reference requests
+  supabase.from("reference_requests").select("*"),
+
+  // 4️⃣ Templates
+  supabase
+    .from("reference_templates")
+    .select("id, name, description")
+    .order("name", { ascending: true }),
+]);
+console.log("🧠 Candidates fetched:", cands.data?.length, cands.error);
+console.log("🧠 Referees fetched:", refs.data?.length, refs.error);
+
 
         console.log("🧩 Dashboard stats fetched:", cands.data, cands.error);
 
-        if (cands.data) setCandidates(cands.data as Candidate[]);
+// 🔄 Merge referees into each candidate
+if (cands.data && refs.data) {
+const merged = cands.data.map((cand) => ({
+  ...cand,
+  // Narrow referee fields to expected partial Referee shape
+  referees: refs.data
+    .filter((r) => r.candidate_id === cand.id)
+    .map((r) => ({
+      id: r.id,
+      candidate_id: r.candidate_id,
+      email_status: r.email_status,
+    })) as Partial<Referee>[], // 👈 this is the key
+}));
+
+setCandidates(merged as unknown as Candidate[]);
+
+}
+
+
+        if (cands.data && refs.data) {
+  const merged = cands.data.map((cand) => {
+    const relatedReferees = refs.data
+      .filter((r) => r.candidate_id === cand.id)
+      .map((r) => ({
+        id: r.id,
+        candidate_id: r.candidate_id,
+        email_status: r.email_status || "pending",
+      }));
+
+    return {
+      ...cand,
+      referees: relatedReferees,
+    };
+  });
+
+  console.log("✅ Merged candidates with referees:", merged);
+  setCandidates(merged as unknown as Candidate[]);
+} else if (cands.data) {
+  console.warn("⚠️ No referees found — using candidate data only");
+  setCandidates(cands.data as Candidate[]);
+}
+
         if (refs.data) setReferees(refs.data as Referee[]);
         if (reqs.data) setRequests(reqs.data as Request[]);
 
@@ -263,7 +347,42 @@ useEffect(() => {
   };
 }, [userId]);
 
-  
+// ── Live Realtime Updates for Referees ───────────────────────────────────────
+useEffect(() => {
+  console.log("⚡️ Subscribing to referee updates...");
+
+  const channel = supabase
+    .channel("realtime:referees")
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "referees" },
+      (payload) => {
+        const updated = payload.new as Referee;
+        console.log("📡 Referee updated:", updated);
+
+        // ✅ Update candidates array so archived/unarchived refs reflect instantly
+        setCandidates((prev) =>
+          prev.map((c) => {
+            if (c.id !== updated.candidate_id) return c;
+
+            // remove this referee from the candidate’s list if archived
+            const withoutOld = (c.referees ?? []).filter((r) => r.id !== updated.id);
+            const newRefs = updated.is_archived ? withoutOld : [...withoutOld, updated];
+
+            return { ...c, referees: newRefs ?? [] };
+
+          })
+        );
+      }
+    )
+    .subscribe();
+
+  return () => {
+    console.log("🧹 Unsubscribing from referee updates");
+    supabase.removeChannel(channel);
+  };
+}, []);
+
 
     // ── Derived counts ──────────────────────────────────────────────────────────
   const pendingCount = useMemo(
@@ -685,7 +804,7 @@ return (
                 showArchived ? "text-teal-600" : "text-gray-600"
               }`}
             >
-              <span>Show archived</span>
+              <span>Show archived candidates</span>
               <span
                 className={`relative inline-flex h-5 w-10 rounded-full transition-colors duration-300 ${
                   showArchived ? "bg-teal-500" : "bg-gray-300"
@@ -737,18 +856,28 @@ return (
 
  {filteredCandidates
   .slice((currentPage - 1) * pageSize, currentPage * pageSize)
-  .map((c) => (
+  .map((c) => {
+    console.log(
+      "🧪 Row render:",
+      c.full_name,
+      "→ consent_status:",
+      c.consent_status,
+      "referees:",
+      c.referees?.length
+    );
 
-    <React.Fragment key={c.id}>
-<tr
-  className={`transition-colors hover:bg-blue-50/40 ${
-    highlightedRows[c.id] === "update"
-      ? "bg-green-50"
-      : highlightedRows[c.id] === "new"
-      ? "bg-yellow-50"
-      : ""
-  }`}
->
+    return (
+      <React.Fragment key={c.id}>
+        <tr
+          className={`transition-colors hover:bg-blue-50/40 ${
+            highlightedRows[c.id] === "update"
+              ? "bg-green-50"
+              : highlightedRows[c.id] === "new"
+              ? "bg-yellow-50"
+              : ""
+          }`}
+        >
+
 
         <td className="px-4 py-3 align-middle text-gray-800 font-medium truncate">
           {c.full_name || "-"}
@@ -764,27 +893,78 @@ return (
 </td>
 
 
+
         <td className="px-4 py-3 align-middle text-gray-600 truncate">
           {c.mobile || "-"}
         </td>
 
 {/* Status / Referees */}
-{/* Status */}
 <td className="px-4 py-3 align-middle w-[14%]">
-  {c.consent_status === "granted" || c.consent_status === "consented" ? (
-    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">
-      ✅ Consent Granted
-    </span>
-  ) : c.consent_status === "pending" ? (
-    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-yellow-100 text-yellow-700">
-      ⏳ Awaiting Consent
-    </span>
-  ) : (
-    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700">
-      ❔ Unknown
-    </span>
-  )}
+  {(() => {
+    const cs = c.consent_status as string | null | undefined;
+
+    // ✅ Consent granted / consented
+    if (["granted", "consented"].includes(cs || "")) {
+      return (
+        <span
+          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-green-100 text-green-700 whitespace-nowrap"
+          title={
+            c.consent_at
+              ? `Consent granted on ${new Date(
+                  c.consent_at
+                ).toLocaleDateString("en-GB")}`
+              : "Candidate has granted consent"
+          }
+        >
+          <span>✅</span>
+          <span>Consent Granted</span>
+        </span>
+      );
+    }
+
+    // ⏳ Awaiting consent (hasn't approved yet)
+    if (
+      ["pending", "awaiting", "awaiting_consent", "awaiting_referees"].includes(
+        cs || ""
+      )
+    ) {
+      return (
+        <span
+          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-yellow-100 text-yellow-800 whitespace-nowrap"
+          title="Waiting for candidate to grant consent"
+        >
+          <span>⏳</span>
+          <span>Awaiting Consent</span>
+        </span>
+      );
+    }
+
+    // ❌ Declined
+    if (cs === "declined") {
+      return (
+        <span
+          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-red-100 text-red-700 whitespace-nowrap"
+          title="Candidate declined consent"
+        >
+          <span>❌</span>
+          <span>Declined</span>
+        </span>
+      );
+    }
+
+    // ❔ Fallback / missing / weird data
+    return (
+      <span
+        className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-gray-100 text-gray-700 whitespace-nowrap"
+        title="Consent status unknown"
+      >
+        <span>❔</span>
+        <span>Unknown</span>
+      </span>
+    );
+  })()}
 </td>
+
 
 
 
@@ -844,30 +1024,33 @@ return (
 
       </tr>
 
-      {expanded === c.id && (
-        <tr className="bg-gray-50">
-          <td colSpan={6} className="p-4">
-           {(() => {
-  console.log("🧠 Candidate object when expanding:", c);
-  return (
-    <CandidateDetails
-      candidate={c}
-      role={role}
-      companyId={companyId}
-      onRefresh={async () => {
-        const { data } = await supabase.from("reference_requests").select("*");
-        if (data) setRequests(data);
-      }}
-    />
-  );
-})()}
-
-          </td>
-        </tr>
-      )}
-    </React.Fragment>
-  ))}
+{expanded === c.id && (
+  <tr className="bg-gray-50">
+    <td colSpan={6} className="p-4">
+      {(() => {
+        console.log("🧠 Candidate object when expanding:", c);
+        return (
+          <CandidateDetails
+            candidate={c}
+            role={role}
+            companyId={companyId}
+            onRefresh={async () => {
+              const { data } = await supabase
+                .from("reference_requests")
+                .select("*");
+              if (data) setRequests(data);
+            }}
+          />
+        );
+      })()}
+    </td>
+  </tr>
+)}
+</React.Fragment>
+);
+})}
 </tbody>
+
 
           </table>
         )}

@@ -2,35 +2,24 @@ export type Candidate = {
   id: string;
   full_name: string;
   email: string;
-  mobile?: string;
-  created_at?: string;
-  created_by?: string;
-  is_archived?: boolean;
-  archived_by?: string | null;
-  archived_at?: string | null;
+  mobile?: string | null; // ✅ add | null here
   consent_token?: string | null;
-  consent_status?: "pending" | "declined" | "granted" | "consented" | null | undefined;
-  status?:
-    | "awaiting_consent"
-    | "consent_granted"
-    | "awaiting_referees"
-    | "referees_submitted"
-    | "references_in_progress"
-    | "references_completed"
-    | "consent_withdrawn"
-    | "archived"
-    | null;
+  status?: string | null;
   template_id?: string | null;
-  email_status?: string | null;
-  last_invite_sent_at?: string | null;
-  referee_count?: number | null;
+  company_id?: string | null;
+  created_by?: string | null;
+  created_at?: string | null;
   updated_at?: string | null;
-  reference_template_id?: string | null;
-  candidate_id?: string | null;
-  dashboard_status?: string | null;
+  is_archived?: boolean | null;
+  referee_count?: number | null;
   completed_referee_count?: number | null;
+  email_status?: string | null;
+  referees?: Referee[];
+  consent_status?: "pending" | "granted" | "declined" | null;
+  consent_at?: string | null;
 
 };
+
 
 
 export type Referee = {
