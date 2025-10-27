@@ -53,6 +53,8 @@ export type Referee = {
   declined_reason?: string | null;
   notes?: string | null;
   email_status?: "pending" | "sent" | "delivered" | "bounced";
+  is_archived?: boolean;
+  archived_at?: string | null;
 
 };
 

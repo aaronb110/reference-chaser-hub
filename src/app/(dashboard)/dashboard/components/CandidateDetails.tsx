@@ -55,7 +55,7 @@ export default function CandidateDetails({
         }
       }
 
-      // ✅ FIX: use candidate.id instead of candidate.candidate_id
+      // ✅ Include is_archived for new feature
       const { data: refs, error: refError } = await supabase
         .from("referees")
         .select(`
@@ -66,18 +66,20 @@ export default function CandidateDetails({
           mobile,
           relationship,
           email_status,
-          status
+          status,
+          is_archived,
+          archived_at
         `)
         .eq("candidate_id", candidate.id);
 
       const { data: reqs, error: reqError } = await supabase
         .from("reference_requests")
         .select("*")
-        .eq("candidate_id", candidate.id);
+        .eq("candidate_id", candidate.id)
+        .eq("is_archived", false); // ✅ skip archived for reminder safety
 
       if (refError || reqError) throw refError || reqError;
 
-      console.log("📋 Referees fetched:", refs);
       setReferees(refs || []);
       setRequests(reqs || []);
     } catch (err) {
@@ -110,12 +112,6 @@ export default function CandidateDetails({
           const next = payload.new as Partial<Referee>;
           const prevOld = payload.old as Partial<Referee> | undefined;
 
-          console.log("📡 Referee realtime:", payload.eventType, {
-            id: next?.id ?? prevOld?.id,
-            email_status: next?.email_status,
-            status: next?.status,
-          });
-
           setReferees((prev) => {
             if (payload.eventType === "INSERT") {
               if (prev.some((r) => r.id === next.id)) return prev;
@@ -123,9 +119,7 @@ export default function CandidateDetails({
             }
 
             if (payload.eventType === "UPDATE") {
-              return prev.map((r) =>
-                r.id === next.id ? { ...r, ...next } : r
-              );
+              return prev.map((r) => (r.id === next.id ? { ...r, ...next } : r));
             }
 
             if (payload.eventType === "DELETE") {
@@ -187,9 +181,19 @@ export default function CandidateDetails({
       return;
     }
 
+    // ✅ Prevent resend to archived referees
+    const activePending = pending.filter(
+      (r) => !referees.find((ref) => ref.id === r.referee_id)?.is_archived
+    );
+
+    if (activePending.length === 0) {
+      toast("No active referees to resend.");
+      return;
+    }
+
     setCooldown(10);
     const nowIso = new Date().toISOString();
-    const updates = pending.map((r) => {
+    const updates = activePending.map((r) => {
       const withinWindow =
         r.resend_window_start &&
         Date.now() - new Date(r.resend_window_start).getTime() < FOURTEEN_D_MS;
@@ -209,7 +213,30 @@ export default function CandidateDetails({
       return;
     }
 
-    toast.success("Resend queued to all pending.");
+    toast.success("Resend queued to all active pending referees.");
+    await onRefresh();
+  };
+
+  // ────────────────────────────── NEW: Archive Referee ──────────────────────────────
+  const handleArchive = async (refereeId: string) => {
+    const confirmArchive = window.confirm(
+      "Are you sure you want to archive this referee? This will stop their reference process and disable their link."
+    );
+    if (!confirmArchive) return;
+
+    const { error } = await supabase
+      .from("referees")
+      .update({ is_archived: true, archived_at: new Date().toISOString() })
+      .eq("id", refereeId);
+
+    if (error) {
+      toast.error("Failed to archive referee.");
+      console.error(error.message);
+      return;
+    }
+
+    toast.success("Referee archived successfully.");
+    await loadData();
     await onRefresh();
   };
 
@@ -235,24 +262,23 @@ export default function CandidateDetails({
           )}
 
           {/* ✅ Consent Status Badge */}
-      {candidate.consent_status === "granted" ? (
-  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">
-    ✅ Consent Granted
-  </span>
-) : candidate.consent_status === "declined" ? (
-  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700">
-    ❌ Declined Consent
-  </span>
-) : candidate.consent_status === "pending" ? (
-  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-yellow-100 text-yellow-700">
-    ⏳ Awaiting Consent
-  </span>
-) : (
-  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700">
-    ❔ Unknown
-  </span>
-)}
-
+          {candidate.consent_status === "granted" ? (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">
+              ✅ Consent Granted
+            </span>
+          ) : candidate.consent_status === "declined" ? (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700">
+              ❌ Declined Consent
+            </span>
+          ) : candidate.consent_status === "pending" ? (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-yellow-100 text-yellow-700">
+              ⏳ Awaiting Consent
+            </span>
+          ) : (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700">
+              ❔ Unknown
+            </span>
+          )}
 
           {anyOverdue && (
             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700">
@@ -328,7 +354,6 @@ export default function CandidateDetails({
                 };
 
                 const emailStatus = r.email_status || "pending";
-
                 const statusColors: Record<string, string> = {
                   waiting: "bg-yellow-100 text-yellow-800",
                   invited: "bg-yellow-100 text-yellow-800",
@@ -355,6 +380,9 @@ export default function CandidateDetails({
                         {getRefStatus(r).charAt(0).toUpperCase() +
                           getRefStatus(r).slice(1)}
                       </span>
+                      {r.is_archived && (
+                        <span className="ml-2 text-xs text-gray-500 italic">(Archived)</span>
+                      )}
                     </td>
 
                     <td className="p-3">
@@ -371,7 +399,17 @@ export default function CandidateDetails({
 
                     <td className="p-3 text-gray-600">{req?.resend_count_14d ?? 0}</td>
 
-                    <td className="p-3 text-right">
+                    <td className="p-3 text-right space-x-3">
+                      {/* ✅ Archive Button */}
+                      {!r.is_archived && (
+                        <button
+                          onClick={() => handleArchive(r.id)}
+                          className="text-red-600 hover:underline text-sm"
+                        >
+                          Archive
+                        </button>
+                      )}
+
                       <button
                         onClick={() => setEditingReferee(r)}
                         className="text-indigo-600 hover:underline text-sm"

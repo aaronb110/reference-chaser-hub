@@ -27,7 +27,7 @@ export default function RefereeFormPage() {
       .from('referees')
       .select('*')
       .eq('token', token)
-      .single()
+      .maybeSingle()
 
     if (!error && data) setReferee(data)
     setLoading(false)
@@ -55,10 +55,32 @@ export default function RefereeFormPage() {
     if (!error) setSubmitted(true)
   }
 
+  // ────────────────────────────── Render states ──────────────────────────────
   if (loading) return <p className="p-4 text-center">Loading…</p>
-  if (!referee) return <p className="p-4 text-center">Invalid or expired link.</p>
-  if (submitted) return <p className="p-4 text-center">✅ Thank you! Your reference has been submitted.</p>
 
+  if (!referee)
+    return (
+      <p className="p-4 text-center text-gray-600">
+        Invalid or expired reference link.
+      </p>
+    )
+
+  // ✅ NEW: guard for archived referees
+  if (referee.is_archived)
+    return (
+      <div className="p-8 text-center text-gray-600">
+        This reference request has been archived and is no longer active.
+      </div>
+    )
+
+  if (submitted)
+    return (
+      <p className="p-4 text-center">
+        ✅ Thank you! Your reference has been submitted.
+      </p>
+    )
+
+  // ────────────────────────────── Form ──────────────────────────────
   return (
     <div className="max-w-xl mx-auto p-6">
       <h1 className="text-2xl font-semibold mb-4">
@@ -70,7 +92,9 @@ export default function RefereeFormPage() {
           <input
             className="w-full border rounded p-2"
             value={formData.referee_name}
-            onChange={(e) => setFormData({ ...formData, referee_name: e.target.value })}
+            onChange={(e) =>
+              setFormData({ ...formData, referee_name: e.target.value })
+            }
             required
           />
         </div>
@@ -80,7 +104,9 @@ export default function RefereeFormPage() {
           <input
             className="w-full border rounded p-2"
             value={formData.relationship}
-            onChange={(e) => setFormData({ ...formData, relationship: e.target.value })}
+            onChange={(e) =>
+              setFormData({ ...formData, relationship: e.target.value })
+            }
             required
           />
         </div>
@@ -91,7 +117,9 @@ export default function RefereeFormPage() {
             className="w-full border rounded p-2"
             rows={4}
             value={formData.comments}
-            onChange={(e) => setFormData({ ...formData, comments: e.target.value })}
+            onChange={(e) =>
+              setFormData({ ...formData, comments: e.target.value })
+            }
           />
         </div>
 
@@ -100,7 +128,9 @@ export default function RefereeFormPage() {
           <select
             className="w-full border rounded p-2"
             value={formData.q1}
-            onChange={(e) => setFormData({ ...formData, q1: e.target.value })}
+            onChange={(e) =>
+              setFormData({ ...formData, q1: e.target.value })
+            }
             required
           >
             <option value="">Select…</option>
@@ -114,7 +144,9 @@ export default function RefereeFormPage() {
           <select
             className="w-full border rounded p-2"
             value={formData.q2}
-            onChange={(e) => setFormData({ ...formData, q2: e.target.value })}
+            onChange={(e) =>
+              setFormData({ ...formData, q2: e.target.value })
+            }
             required
           >
             <option value="">Select…</option>
@@ -130,7 +162,9 @@ export default function RefereeFormPage() {
           <select
             className="w-full border rounded p-2"
             value={formData.q3}
-            onChange={(e) => setFormData({ ...formData, q3: e.target.value })}
+            onChange={(e) =>
+              setFormData({ ...formData, q3: e.target.value })
+            }
             required
           >
             <option value="">Select…</option>

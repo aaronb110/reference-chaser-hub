@@ -64,22 +64,25 @@ const [referees, setReferees] = useState<Referee[]>([]);
 
       // ✅ Mark consent as given (first time they open this page)
 // ✅ Only update if not already consented
-const { error: consentErr } = await supabase
+console.log("🧩 Token being sent:", cleanToken);
+
+const { data, error } = await supabase
   .from("candidates")
   .update({
-    consent_status: "granted",      // match dashboard logic
+    consent_status: "granted",
     consent_at: new Date().toISOString(),
   })
-  .eq("consent_token", cleanToken);
+  .eq("consent_token", cleanToken)
+  .select("id, consent_token, consent_status");
 
-
-
-
-if (consentErr) {
-  console.error("❌ Failed to record consent:", consentErr.message);
+if (error) {
+  console.error("❌ Failed to record consent:", error.message);
+} else if (data && data.length > 0) {
+  console.log("✅ Candidate consent recorded successfully:", data);
 } else {
-  console.log("✅ Candidate consent recorded successfully.");
+  console.warn("⚠️ No matching candidate found for token:", cleanToken);
 }
+
 
 
       let config: any = null;
