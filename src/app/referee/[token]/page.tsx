@@ -17,8 +17,11 @@ type RefereeRow = {
   candidate: Candidate[] | null;
 };
 
-export default async function RefereePage(props: { params: { token: string } }) {
-  const params = await props.params;
+export default async function RefereePage({
+  params,
+}: {
+  params: { token: string };
+}) {
   const supabase = await createServerSupabase();
 
   // 🔹 1. Get referee data
@@ -65,9 +68,7 @@ export default async function RefereePage(props: { params: { token: string } }) 
     const c = referee.candidate;
     if (!c) return null;
     if (Array.isArray(c)) return c[0]?.id || null;
-    // fallback if Supabase ever returns a single object
-    // @ts-expect-error – temporary type mismatch, safe to ignore
-
+    // @ts-expect-error - Supabase can return an object or array, ignore mismatch
     return c.id || null;
   })();
 
