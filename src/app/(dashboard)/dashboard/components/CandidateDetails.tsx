@@ -28,6 +28,9 @@ export default function CandidateDetails({
   const [editingReferee, setEditingReferee] = useState<RefereeWithRequest | null>(null);
   const [cooldown, setCooldown] = useState<number>(0);
   const [templateName, setTemplateName] = useState<string | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedRefs, setSelectedRefs] = useState<string[]>([]);
+
 
   const stableCandidate = useMemo(() => candidate, [candidate.id]);
   const candidateId = useMemo(() => candidate.id, [candidate.id]);
@@ -40,6 +43,8 @@ export default function CandidateDetails({
     try {
       console.log("🎯 Candidate ID passed to CandidateDetails:", candidate.id);
       console.log("🧩 Template ID on candidate:", candidate.template_id);
+
+  
 
       // ✅ Load template name (optional)
       if (candidate.template_id) {
@@ -255,7 +260,16 @@ const visibleRefs = showArchivedRefs
   ? referees
   : referees.filter((r) => !r.is_archived);
 
-  // ────────────────────────────── Render ──────────────────────────────
+// ────────────────────────────── Render ──────────────────────────────
+const allArchived = visibleRefs.length > 0 && visibleRefs.every((r) => r.is_archived);
+const candidateArchived = candidate.is_archived === true;
+const viewingArchivedOnly = showArchivedRefs && allArchived;
+
+// Combined rule: disable resends if candidate or all refs archived
+const disableResends = candidateArchived || allArchived || viewingArchivedOnly;
+
+console.log("Candidate archived flag:", candidate.is_archived);
+
    return (
    <div className="w-full bg-gray-50/60 border-t border-gray-200 rounded-b-md px-4 pt-3 pb-4">
 
@@ -309,29 +323,82 @@ const visibleRefs = showArchivedRefs
             </button>
           </div>
 
-          <button
-            onClick={() => setShowAddRef(true)}
-            className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-700 whitespace-nowrap"
-          >
-            + Add Referee
-          </button>
+<button
+  onClick={() => {
+    if (!disableResends) setShowAddRef(true);
+  }}
+  disabled={disableResends}
+  className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap ${
+    disableResends
+      ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+      : "bg-indigo-600 text-white hover:bg-indigo-700"
+  }`}
+  title={
+    disableResends
+      ? candidateArchived
+        ? "Cannot add referees — candidate archived"
+        : "Cannot add referees when all referees are archived"
+      : "Add a new referee"
+  }
+>
+  + Add Referee
+</button>
 
-          <button
-            onClick={handleResendAll}
-            disabled={cooldown > 0 || (!canResendNow && role === "user")}
-            className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap ${
-              cooldown > 0 || (!canResendNow && role === "user")
-                ? "bg-gray-200 text-gray-600 cursor-not-allowed"
-                : "bg-yellow-500 text-white hover:bg-yellow-600"
-            }`}
-            title={
-              role === "user"
-                ? "Max 3 resends within 14 days"
-                : "No limit (manager/admin)"
-            }
-          >
-            {cooldown > 0 ? `Retry in ${cooldown}s` : "Resend All Pending"}
-          </button>
+
+{/* Resend Selected */}
+<button
+  onClick={() => {
+    if (!disableResends) setSelectMode(!selectMode);
+  }}
+  disabled={disableResends}
+  className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap ${
+    disableResends
+      ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+      : selectMode
+      ? "bg-gray-300 text-gray-800 hover:bg-gray-400"
+      : "bg-blue-500 text-white hover:bg-blue-600"
+  }`}
+>
+  {disableResends
+    ? "Resend Disabled"
+    : selectMode
+    ? "Cancel Selection"
+    : "Resend Selected"}
+</button>
+
+
+
+<button
+  onClick={handleResendAll}
+  disabled={
+    cooldown > 0 ||
+    (!canResendNow && role === "user") ||
+    disableResends
+  }
+  className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap ${
+    cooldown > 0 ||
+    (!canResendNow && role === "user") ||
+    disableResends
+      ? "bg-gray-200 text-gray-600 cursor-not-allowed"
+      : "bg-yellow-500 text-white hover:bg-yellow-600"
+  }`}
+  title={
+    disableResends
+      ? candidateArchived
+        ? "Cannot resend — candidate archived"
+        : "Cannot resend to archived referees"
+      : role === "user"
+      ? "Max 3 resends within 14 days"
+      : "No limit (manager/admin)"
+  }
+>
+  {disableResends
+    ? "Resend Disabled"
+    : cooldown > 0
+    ? `Retry in ${cooldown}s`
+    : "Resend All Pending"}
+</button>
+
         </div>
       </div>
 
@@ -394,7 +461,24 @@ const visibleRefs = showArchivedRefs
                       r.is_archived ? "opacity-50 italic" : ""
                     }`}
                   >
-                    <td className="p-3">{r.name}</td>
+                    <td className="p-3">
+  {selectMode && !r.is_archived && (
+    <input
+      type="checkbox"
+      className="mr-2"
+      checked={selectedRefs.includes(r.id)}
+      onChange={(e) => {
+        if (e.target.checked) {
+          setSelectedRefs([...selectedRefs, r.id]);
+        } else {
+          setSelectedRefs(selectedRefs.filter((id) => id !== r.id));
+        }
+      }}
+    />
+  )}
+  {r.name}
+</td>
+
                     <td className="p-3">{r.email}</td>
                     <td className="p-3 text-gray-600">{r.mobile || "—"}</td>
                     <td className="p-3 text-gray-600">
@@ -457,6 +541,33 @@ const visibleRefs = showArchivedRefs
             )}
           </tbody>
         </table>
+
+        {selectMode && selectedRefs.length > 0 && (
+  <div className="mt-3 text-right">
+    <button
+      onClick={async () => {
+        for (const id of selectedRefs) {
+          const { error } = await supabase.rpc("send_reference_email", {
+            referee_id: id,
+          });
+          if (error) {
+            console.error("Resend failed for", id, error);
+            toast.error("One or more emails failed to send");
+            return;
+          }
+        }
+
+        toast.success(`Resent ${selectedRefs.length} referee request(s)`);
+        setSelectMode(false);
+        setSelectedRefs([]);
+      }}
+      className="px-3 py-1.5 rounded-lg bg-yellow-500 text-white text-sm hover:bg-yellow-600"
+    >
+      Send to {selectedRefs.length} Selected
+    </button>
+  </div>
+)}
+
       </div>
 
       {/* Add Referee Modal */}

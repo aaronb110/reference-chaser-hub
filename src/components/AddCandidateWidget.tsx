@@ -1,12 +1,11 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { supabase } from '@/lib/supabaseClient'; // adjust path if needed
+import { supabase } from '@/lib/supabaseClient';
 import clsx from 'clsx';
 
 type Props = {
   onAdded?: () => void;
-  /** Plug your existing toast here. e.g. notify("Saved", "success") */
   notify?: (message: string, type?: 'success' | 'error' | 'info') => void;
   className?: string;
 };
@@ -43,7 +42,6 @@ export default function AddCandidateWidget({ onAdded, notify, className }: Props
 
   const nameRef = useRef<HTMLInputElement>(null);
 
-  // Autofocus when modal opens
   useEffect(() => {
     if (open) {
       const t = setTimeout(() => nameRef.current?.focus(), 50);
@@ -78,58 +76,61 @@ export default function AddCandidateWidget({ onAdded, notify, className }: Props
     return Object.keys(e).length === 0;
   }
 
-  async function handleSubmit(ev?: React.FormEvent) {
-    ev?.preventDefault();
-    if (submitting) return;
+async function handleSubmit(ev?: React.FormEvent) {
+  ev?.preventDefault();
+  if (submitting) return;
 
-    if (!validate()) return;
-
-    try {
-      setSubmitting(true);
-
-      // Convert values for persistence
-      const emailLower = email.trim().toLowerCase();
-      const e164 = toE164Uk(mobile);
-
-      // Get current user for created_by
-      const {
-        data: { user },
-        error: userErr,
-      } = await supabase.auth.getUser();
-
-      if (userErr) throw userErr;
-      if (!user) throw new Error('No authenticated user found.');
-
-      const payload = {
-        full_name: fullName.trim(),
-        email: emailLower,
-        mobile: e164,
-        created_by: user.id, // assumes this column exists in `candidates`
-      };
-
-      const { error: insertErr } = await supabase.from('candidates').insert(payload);
-      if (insertErr) throw insertErr;
-
-      // Success UX
-      notify?.('Candidate added successfully!', 'success');
-      setJustSaved(true);
-
-      // Let parent refresh list
-      onAdded?.();
-
-      // Hold modal open for 3 seconds, then close + reset
-      setTimeout(() => {
-        closeModal();
-      }, 3000);
-    } catch (err: any) {
-      notify?.(err?.message || 'Something went wrong creating the candidate.', 'error');
-      setSubmitting(false);
-    }
+  const valid = validate();
+  if (!valid) {
+    notify?.('Please correct the highlighted fields.', 'error');
+    return;
   }
+
+  try {
+    setSubmitting(true);
+
+    // ✅ fail-safe guard for empty or invalid numbers
+    if (!mobile.trim() || !isUkMobileStarting07(mobile)) {
+      notify?.('Enter a valid UK mobile starting 07 (11 digits).', 'error');
+      setSubmitting(false);
+      return;
+    }
+
+    const emailLower = email.trim().toLowerCase();
+    const e164 = toE164Uk(mobile);
+
+    const {
+      data: { user },
+      error: userErr,
+    } = await supabase.auth.getUser();
+
+    if (userErr) throw userErr;
+    if (!user) throw new Error('No authenticated user found.');
+
+    const payload = {
+      full_name: fullName.trim(),
+      email: emailLower,
+      mobile: e164,
+      created_by: user.id,
+    };
+
+    const { error: insertErr } = await supabase.from('candidates').insert(payload);
+    if (insertErr) throw insertErr;
+
+    notify?.('Candidate added successfully!', 'success');
+    setJustSaved(true);
+    onAdded?.();
+
+    setTimeout(() => closeModal(), 3000);
+  } catch (err: any) {
+    notify?.(err?.message || 'Something went wrong creating the candidate.', 'error');
+    setSubmitting(false);
+  }
+}
+
 
   return (
     <div className={className}>
-      {/* Trigger button for your dashboard */}
       <button
         type="button"
         onClick={() => setOpen(true)}
@@ -138,20 +139,13 @@ export default function AddCandidateWidget({ onAdded, notify, className }: Props
         + Add Candidate
       </button>
 
-      {/* Modal */}
       {open && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center"
-        >
-          {/* Backdrop */}
+        <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center">
           <div
             className="absolute inset-0 bg-black/60"
             onClick={() => (!submitting ? closeModal() : null)}
           />
 
-          {/* Panel */}
           <form
             onSubmit={handleSubmit}
             className="relative z-10 w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl"
@@ -161,7 +155,6 @@ export default function AddCandidateWidget({ onAdded, notify, className }: Props
               <p className="text-sm text-slate-300">Create a new candidate record.</p>
             </div>
 
-            {/* Status banner */}
             {justSaved && (
               <div className="mb-4 rounded-lg border border-teal-600 bg-teal-900/30 px-3 py-2 text-sm text-teal-200">
                 Candidate saved. Closing in 3 seconds…
@@ -170,7 +163,7 @@ export default function AddCandidateWidget({ onAdded, notify, className }: Props
 
             {/* Full name */}
             <label className="mb-2 block text-sm font-medium text-slate-200" htmlFor="full_name">
-              Full name
+              Full name <span className="text-red-400">*</span>
             </label>
             <input
               id="full_name"
@@ -183,14 +176,13 @@ export default function AddCandidateWidget({ onAdded, notify, className }: Props
               onChange={(e) => setFullName(e.target.value)}
               placeholder="Jane Smith"
               disabled={submitting || justSaved}
+              required
             />
-            {errors.full_name && (
-              <p className="mb-3 text-xs text-red-400">{errors.full_name}</p>
-            )}
+            {errors.full_name && <p className="mb-3 text-xs text-red-400">{errors.full_name}</p>}
 
             {/* Email */}
             <label className="mb-2 block text-sm font-medium text-slate-200" htmlFor="email">
-              Email
+              Email <span className="text-red-400">*</span>
             </label>
             <input
               id="email"
@@ -204,16 +196,18 @@ export default function AddCandidateWidget({ onAdded, notify, className }: Props
               placeholder="jane@example.com"
               disabled={submitting || justSaved}
               autoComplete="email"
+              required
             />
             {errors.email && <p className="mb-3 text-xs text-red-400">{errors.email}</p>}
 
             {/* Mobile */}
             <label className="mb-2 block text-sm font-medium text-slate-200" htmlFor="mobile">
-              Mobile (UK)
+              Mobile (UK) <span className="text-red-400">*</span>
             </label>
             <input
               id="mobile"
               inputMode="numeric"
+              required
               className={clsx(
                 'mb-2 w-full rounded-xl border bg-slate-800 px-3 py-2 text-white outline-none',
                 errors.mobile ? 'border-red-500' : 'border-slate-600 focus:border-teal-500'
@@ -225,7 +219,6 @@ export default function AddCandidateWidget({ onAdded, notify, className }: Props
             />
             {errors.mobile && <p className="mb-3 text-xs text-red-400">{errors.mobile}</p>}
 
-            {/* Actions */}
             <div className="mt-6 flex items-center justify-end gap-3">
               <button
                 type="button"

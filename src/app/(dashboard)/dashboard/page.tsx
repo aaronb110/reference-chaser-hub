@@ -206,6 +206,8 @@ export default function DashboardPage() {
 
   const canManage = role === "manager" || role === "admin";
 
+  
+
   // Load user + profile
   useEffect(() => {
     async function loadProfile() {
@@ -246,12 +248,51 @@ export default function DashboardPage() {
       if (cands) setCandidates(cands as Candidate[]);
 
       const { data: tmpls } = await supabase
-        .from("reference_templates")
-        .select("id, name, description");
-      if (tmpls) setTemplates(tmpls);
+      .from("reference_templates")
+      .select("id, name, description, category, display_label")
+      .order("category", { ascending: true })
+      .order("display_label", { ascending: true });
+
+if (tmpls) setTemplates(tmpls);
     }
     loadData();
   }, [companyId]);
+
+  // Group templates by category for dropdown
+const templatesByCategory = useMemo(() => {
+  const groups: Record<string, typeof templates> = {};
+  templates.forEach((t: any) => {
+    if (!t.category) return;
+    if (!groups[t.category]) groups[t.category] = [];
+    groups[t.category].push(t);
+  });
+  return groups;
+}, [templates]);
+
+  // ─────────────────────────────────────────
+// Realtime subscription for new candidates
+// ─────────────────────────────────────────
+useEffect(() => {
+  if (!companyId) return;
+
+  const channel = supabase
+    .channel('candidates-realtime')
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'candidates', filter: `company_id=eq.${companyId}` },
+      (payload) => {
+        // Prepend the new candidate so it appears instantly
+        setCandidates((prev) => [payload.new as Candidate, ...prev]);
+      }
+    )
+    .subscribe();
+
+  // Cleanup on unmount
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, [companyId]);
+
 
   const toggleExpand = (id: string) => {
     setExpanded((prev) => (prev === id ? null : id));
@@ -321,6 +362,14 @@ export default function DashboardPage() {
       if (inserted) toast.success("Candidate added successfully");
       setShowModal(false);
       setNewCandidate({ full_name: "", email: "", mobile: "", template_id: "" });
+      // 🔄 Refresh candidate list after adding
+const { data: updated } = await supabase
+  .from("candidate_dashboard_stats")
+  .select("*")
+  .eq("company_id", companyId)
+  .order("created_at", { ascending: false });
+if (updated) setCandidates(updated as Candidate[]);
+
     } catch (err) {
       console.error(err);
       toast.error("Error adding candidate");
@@ -580,72 +629,88 @@ const pageSize = 10; // adjust per your preference
               Add New Candidate
             </h2>
 
-            <form onSubmit={handleAddCandidate} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700">
-                  Full name
-                </label>
-                <input
-                  type="text"
-                  value={newCandidate.full_name}
-                  onChange={(e) =>
-                    setNewCandidate({ ...newCandidate, full_name: e.target.value })
-                  }
-                  className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-                  placeholder="e.g. Alex Johnson"
-                  required
-                />
-              </div>
+<form onSubmit={handleAddCandidate} className="space-y-5">
+    <p className="text-sm font-medium text-[#00B3B0] mb-4">
+    All fields are required
+    </p>
 
-              <div>
-                <label className="block text-sm font-medium text-slate-700">
-                  Email
-                </label>
-                <input
-                  type="email"
-                  value={newCandidate.email}
-                  onChange={(e) =>
-                    setNewCandidate({ ...newCandidate, email: e.target.value })
-                  }
-                  className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-                  placeholder="alex@example.com"
-                  required
-                />
-              </div>
 
-              <div>
-                <label className="block text-sm font-medium text-slate-700">
-                  Mobile (optional)
-                </label>
-                <input
-                  type="tel"
-                  value={newCandidate.mobile}
-                  onChange={(e) =>
-                    setNewCandidate({ ...newCandidate, mobile: e.target.value })
-                  }
-                  className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-                  placeholder="07..."
-                />
-              </div>
+  <div>
+    <label className="block text-sm font-medium text-slate-700">Full name</label>
+    <input
+      type="text"
+      value={newCandidate.full_name}
+      onChange={(e) =>
+        setNewCandidate({ ...newCandidate, full_name: e.target.value })
+      }
+      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+      placeholder="e.g. Alex Johnson"
+      required
+    />
+  </div>
+
+  <div>
+    <label className="block text-sm font-medium text-slate-700">Email</label>
+    <input
+      type="email"
+      value={newCandidate.email}
+      onChange={(e) =>
+        setNewCandidate({ ...newCandidate, email: e.target.value })
+      }
+      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+      placeholder="alex@example.com"
+      required
+    />
+  </div>
+
+  <div>
+    <label className="block text-sm font-medium text-slate-700">Mobile</label>
+    <input
+      type="tel"
+      value={newCandidate.mobile}
+      onChange={(e) =>
+        setNewCandidate({ ...newCandidate, mobile: e.target.value })
+      }
+      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+      placeholder="07..."
+      required
+    />
+  </div>
+
+
 
               <div>
                 <label className="block text-sm font-medium text-slate-700">
                   Reference Type
                 </label>
                 <select
-                  value={newCandidate.template_id || ""}
-                  onChange={(e) =>
-                    setNewCandidate({ ...newCandidate, template_id: e.target.value })
-                  }
-                  className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-                >
-                  <option value="">Select reference type</option>
-                  {templates.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
-                </select>
+  value={newCandidate.template_id || ""}
+  onChange={(e) =>
+    setNewCandidate({ ...newCandidate, template_id: e.target.value })
+  }
+  className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00B3B0]"
+>
+  <option value="">Select reference type</option>
+
+  {Object.entries(templatesByCategory).map(([category, items]) => (
+    <optgroup key={category} label={category}>
+      {items.map((t: any) => (
+        <option key={t.id} value={t.id}>
+          {t.display_label || t.name}
+        </option>
+      ))}
+    </optgroup>
+  ))}
+</select>
+
+<p className="text-xs text-slate-500 mt-1 min-h-[1rem]">
+  {(() => {
+    const chosen = templates.find((t) => t.id === newCandidate.template_id);
+    if (!chosen) return "Select the type of reference you want to request.";
+    return chosen.description || "";
+  })()}
+</p>
+
               </div>
 
               <div className="flex justify-end gap-3 pt-4">
