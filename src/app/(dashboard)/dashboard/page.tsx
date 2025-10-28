@@ -1,75 +1,180 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
-import React from "react";
 import { supabase } from "@/lib/supabaseClient";
 import CandidateDetails from "./components/CandidateDetails";
-import StatusBadge from "@/components/StatusBadge";
 import { customAlphabet } from "nanoid";
 import { trimAll, toTitleCaseName, normaliseEmail } from "@/utils/normalise";
-import type { Candidate, Referee, Request } from "@/types/models"; // ✅ unified import
+import type { Candidate, Referee, Request } from "@/types/models";
 
+type Role = "user" | "manager" | "admin";
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
 const ukToE164 = (mobile: string) =>
   /^07\d{9}$/.test(mobile) ? "+44" + mobile.slice(1) : mobile;
 
-const formatDate = (value?: string | null) => {
-  if (!value) return "-";
-  return new Date(value).toLocaleDateString("en-GB");
-};
+const nano = customAlphabet("123456789ABCDEFGHJKLMNPQRSTUVWXYZ", 20);
 
-// ── Local Roles ───────────────────────────────────────────────────────────────
-type Role = "user" | "manager" | "admin";
+// ─────────────────────────────────────────
+// Candidate Card
+// ─────────────────────────────────────────
+function CandidateCard({
+  c,
+  role,
+  canManage,
+  expanded,
+  onToggleExpand,
+  onArchive,
+  onUnarchive,
+  onRefreshRequests,
+  companyId,
+  setRequests,
+  highlightedRows,
+}: {
+  c: Candidate;
+  role: Role;
+  canManage: boolean;
+  expanded: string | null;
+  onToggleExpand: (id: string) => void;
+  onArchive: (id: string, name: string) => void; // ✅ key line
+  onUnarchive: (id: string, name: string) => void; // ✅ key line
+  onRefreshRequests: () => Promise<void>;
+  companyId: string | null;
+  setRequests: React.Dispatch<React.SetStateAction<Request[]>>;
+  highlightedRows: Record<string, "update" | "new">;
+}) {
 
-function getDeliveryStatus(candidate: Candidate): {
-  label: string;
-  color: string;
-  emoji: string;
-  tooltip: string;
-} {
-  switch (candidate.consent_status) {
-    case "granted":
-      return {
-        label: "Consent Granted",
-        color: "green",
-        emoji: "✅",
-        tooltip: candidate.consent_at
-          ? `Granted on ${new Date(candidate.consent_at).toLocaleDateString("en-GB")}`
-          : "Candidate granted consent",
-      };
-    case "declined":
-      return {
-        label: "Declined",
-        color: "red",
-        emoji: "❌",
-        tooltip: "Candidate declined consent for references",
-      };
-    case "pending":
-      return {
-        label: "Awaiting Consent",
-        color: "yellow",
-        emoji: "⏳",
-        tooltip: "Candidate has not yet responded",
-      };
-    default:
-      return {
-        label: "Unknown",
-        color: "gray",
-        emoji: "❔",
-        tooltip: "Consent status not set",
-      };
-  }
+  const highlightClass =
+    highlightedRows[c.id] === "update"
+      ? "ring-2 ring-green-300 bg-green-50/40"
+      : highlightedRows[c.id] === "new"
+      ? "ring-2 ring-yellow-300 bg-yellow-50/40"
+      : "bg-white";
+
+  return (
+    <div
+  className={`rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all duration-200 ${highlightClass} ${
+    c.is_archived ? "opacity-75 grayscale-[40%]" : ""
+  }`}
+>
+
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 px-6 py-4">
+        {/* Left: Candidate Info */}
+        <div className="flex flex-col">
+          {c.is_archived && (
+  <span className="ml-2 inline-block text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+    Archived
+  </span>
+)}
+
+          <div className="text-slate-900 font-semibold text-sm sm:text-base">
+            {c.full_name}
+          </div>
+          <div className="text-slate-600 text-xs sm:text-sm">{c.email}</div>
+          {c.mobile && <div className="text-slate-400 text-xs">{c.mobile}</div>}
+        </div>
+
+        {/* Middle: Pills */}
+        <div className="flex flex-wrap gap-2 justify-start md:justify-center">
+          {/* Consent */}
+          <span
+            className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${
+              c.consent_status === "granted"
+                ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
+                : c.consent_status === "declined"
+                ? "bg-rose-50 text-rose-700 border border-rose-100"
+                : "bg-amber-50 text-amber-700 border border-amber-100"
+            }`}
+          >
+            Consent:{" "}
+            {c.consent_status
+              ? c.consent_status.charAt(0).toUpperCase() +
+                c.consent_status.slice(1)
+              : "Unknown"}
+          </span>
+
+          {/* Email */}
+          <span
+            className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${
+              c.email_status === "delivered"
+                ? "bg-blue-50 text-blue-700 border border-blue-100"
+                : c.email_status === "bounced"
+                ? "bg-rose-50 text-rose-700 border border-rose-100"
+                : c.email_status === "sent"
+                ? "bg-teal-50 text-teal-700 border border-teal-100"
+                : "bg-slate-50 text-slate-700 border border-slate-100"
+            }`}
+          >
+            Email:{" "}
+            {c.email_status
+              ? c.email_status.charAt(0).toUpperCase() +
+                c.email_status.slice(1)
+              : "Unknown"}
+          </span>
+
+          {/* References */}
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-50 text-slate-700 border border-slate-200">
+            {c.completed_referee_count ?? 0} / {c.referee_count ?? 0} refs
+          </span>
+        </div>
+
+        {/* Right: Actions */}
+        <div className="flex items-center gap-2 mt-2 md:mt-0">
+          {/* View Details */}
+<button
+  onClick={() => onToggleExpand(c.id)}
+  className={`px-3 py-1.5 text-xs sm:text-sm font-medium rounded-lg transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 min-w-[95px] ${
+    expanded === c.id
+      ? "bg-slate-100 text-slate-800 border border-slate-200 hover:bg-slate-200"
+      : "bg-[#0A1A2F] text-white hover:bg-[#122B4C]"
+  }`}
+>
+  {expanded === c.id ? "Hide Details" : "View Details"}
+</button>
+
+{/* Archive / Unarchive */}
+{canManage &&
+  (!c.is_archived ? (
+    <button
+      onClick={() => onArchive(c.id, c.full_name)}
+      className="min-w-[95px] px-3 py-1.5 text-xs sm:text-sm font-medium rounded-lg bg-rose-500 text-white hover:bg-rose-600 active:scale-[0.98] transition-all shadow-sm"
+    >
+      Archive
+    </button>
+  ) : (
+    <button
+      onClick={() => onUnarchive(c.id, c.full_name)}
+      className="min-w-[95px] px-3 py-1.5 text-xs sm:text-sm font-medium rounded-lg bg-teal-600 text-white hover:bg-teal-700 active:scale-[0.98] transition-all shadow-sm"
+    >
+      Unarchive
+    </button>
+  ))}
+
+
+        </div>
+      </div>
+
+      {expanded === c.id && (
+        <div className="border-t border-slate-200 bg-slate-50 px-6 py-4 rounded-b-2xl">
+          <CandidateDetails
+            candidate={c}
+            role={role}
+            companyId={companyId}
+            onRefresh={onRefreshRequests}
+          />
+        </div>
+      )}
+    </div>
+  );
 }
 
+// ─────────────────────────────────────────
+// Dashboard Page
+// ─────────────────────────────────────────
 export default function DashboardPage() {
   const router = useRouter();
-  console.log("✅ DashboardPage component rendered");
 
-
-  // ── State ───────────────────────────────────────────────────────────────────
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -77,14 +182,21 @@ export default function DashboardPage() {
   const [loadingProfile, setLoadingProfile] = useState(true);
 
   const [candidates, setCandidates] = useState<Candidate[]>([]);
-  const [referees, setReferees] = useState<Referee[]>([]);
   const [requests, setRequests] = useState<Request[]>([]);
-  const [settings, setSettings] = useState<{ overdue_days: number; company_name?: string } | null>(null);
+  const [templates, setTemplates] = useState<
+    { id: string; name: string; description?: string | null }[]
+  >([]);
 
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+  const [viewMode, setViewMode] = useState<"mine" | "others" | "all">("mine");
+  const [highlightedRows, setHighlightedRows] = useState<
+    Record<string, "update" | "new">
+  >({});
+
   const [showModal, setShowModal] = useState(false);
-  const [sending, setSending] = useState(false);
+  const [adding, setAdding] = useState(false);
   const [newCandidate, setNewCandidate] = useState({
     full_name: "",
     email: "",
@@ -92,737 +204,298 @@ export default function DashboardPage() {
     template_id: "",
   });
 
-  const [sortBy, setSortBy] = useState<
-    "created_desc" | "created_asc" | "name_asc" | "name_desc"
-  >("created_desc");
-  const [viewMode, setViewMode] = useState<"mine" | "others" | "all">("mine");
   const canManage = role === "manager" || role === "admin";
-  const [showArchived, setShowArchived] = useState(false); // managers only
-  const nano = customAlphabet("123456789ABCDEFGHJKLMNPQRSTUVWXYZ", 20);
 
-  // Reference templates for the modal dropdown
-  const [templates, setTemplates] = useState<
-    { id: string; name: string; description?: string | null }[]
-  >([]);
-  const [adding, setAdding] = useState(false);
-
-  // Pagination
-  const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 15; // 👈 change to 20 if preferred
-
-  // Track recently changed or new candidates for highlight animation
-  const [highlightedRows, setHighlightedRows] = useState<Record<string, "update" | "new">>({});
-
-
-useEffect(() => {
-  let cancelled = false;
-
-  async function loadProfile() {
-    console.log("🚀 Starting profile load...");
-    try {
+  // Load user + profile
+  useEffect(() => {
+    async function loadProfile() {
       const { data: sessionData } = await supabase.auth.getSession();
-      const user = sessionData?.session?.user ?? null;
+      const user = sessionData?.session?.user;
 
       if (!user) {
-        console.warn("⚠️ No session found — redirecting to /login");
-        if (!cancelled) {
-          setLoadingProfile(false);
-          router.push("/login");
-        }
+        router.push("/login");
         return;
       }
 
-      if (!cancelled) {
-        setUserId(user.id);
-        setUserEmail(user.email ?? null);
-      }
+      setUserId(user.id);
+      setUserEmail(user.email ?? null);
 
-      // ── Profile ─────────────────────────────────────────────────────────────
-      const { data: profile, error: profileErr } = await supabase
+      const { data: profile } = await supabase
         .from("profiles")
         .select("role, company_id")
         .eq("id", user.id)
         .maybeSingle();
 
-      if (profileErr) console.error("Profile load error:", profileErr.message);
-
-      const companyIdLocal = profile?.company_id ?? null;
-
-      if (!cancelled) {
-        setRole((profile?.role as Role) ?? "user");
-        setCompanyId(companyIdLocal);
-      }
-
-      // 🚦 Wait here until we have a valid company_id before fetching data
-      if (!companyIdLocal) {
-        console.warn("⏳ No company_id found yet, skipping data fetch.");
-        return;
-      }
-
-      // ── Account settings ────────────────────────────────────────────────────
-// 💤 Skipping account_settings for now — not in use yet
-const settingsData = {
-  overdue_days: null,
-  company_name: "Demo Company",
-};
-
-      // ── Bulk data fetch (candidates, referees, requests, templates) ─────────
-      if (!cancelled) {
-const [cands, refs, reqs, tmpls] = await Promise.all([
-
-  
-  // 1️⃣ Main candidate view
-  supabase
-    .from("candidate_dashboard_stats")
-    .select(`
-      id,
-      full_name,
-      email,
-      mobile,
-      company_id,
-      status,
-      dashboard_status,
-      consent_status,
-      consent_at,
-      template_id,
-      referee_count,
-      completed_referee_count,
-      email_status,
-      is_archived,
-      created_at,
-      created_by
-    `)
-    .eq("company_id", companyIdLocal)
-    .order("created_at", { ascending: false }),
-
-// 2️⃣ Fetch only active referees (exclude archived)
-supabase
-  .from("referees")
-  .select("id, candidate_id, email_status, is_archived")
-  .is("is_archived", false),
-
-
-  // 3️⃣ Reference requests
-  supabase.from("reference_requests").select("*"),
-
-  // 4️⃣ Templates
-  supabase
-    .from("reference_templates")
-    .select("id, name, description")
-    .order("name", { ascending: true }),
-]);
-console.log("🧠 Candidates fetched:", cands.data?.length, cands.error);
-console.log("🧠 Referees fetched:", refs.data?.length, refs.error);
-
-
-        console.log("🧩 Dashboard stats fetched:", cands.data, cands.error);
-
-// 🔄 Merge referees into each candidate
-if (cands.data && refs.data) {
-const merged = cands.data.map((cand) => ({
-  ...cand,
-  // Narrow referee fields to expected partial Referee shape
-  referees: refs.data
-    .filter((r) => r.candidate_id === cand.id)
-    .map((r) => ({
-      id: r.id,
-      candidate_id: r.candidate_id,
-      email_status: r.email_status,
-    })) as Partial<Referee>[], // 👈 this is the key
-}));
-
-setCandidates(merged as unknown as Candidate[]);
-
-}
-
-
-        if (cands.data && refs.data) {
-  const merged = cands.data.map((cand) => {
-    const relatedReferees = refs.data
-      .filter((r) => r.candidate_id === cand.id)
-      .map((r) => ({
-        id: r.id,
-        candidate_id: r.candidate_id,
-        email_status: r.email_status || "pending",
-      }));
-
-    return {
-      ...cand,
-      referees: relatedReferees,
-    };
-  });
-
-  console.log("✅ Merged candidates with referees:", merged);
-  setCandidates(merged as unknown as Candidate[]);
-} else if (cands.data) {
-  console.warn("⚠️ No referees found — using candidate data only");
-  setCandidates(cands.data as Candidate[]);
-}
-
-        if (refs.data) setReferees(refs.data as Referee[]);
-        if (reqs.data) setRequests(reqs.data as Request[]);
-
-        if (tmpls.error) {
-          console.error("Template load error:", tmpls.error.message);
-        } else if (tmpls.data) {
-          console.log("📄 Loaded templates:", tmpls.data);
-          setTemplates(
-            tmpls.data as {
-              id: string;
-              name: string;
-              description?: string | null;
-            }[]
-          );
-        }
-      }
-    } catch (err) {
-      console.error("❌ Error loading profile:", err);
-    } finally {
-      if (!cancelled) setLoadingProfile(false);
-    }
-  }
-
-  loadProfile();
-  return () => {
-    cancelled = true;
-  };
-}, [router]);
-
-
-// ── Live Realtime Updates for Candidate Status ─────────────────────────────
-useEffect(() => {
-  if (!userId) return;
-
-  console.log("⚡️ Subscribing to live candidate updates...");
-
-  const channel = supabase
-    .channel("realtime:candidates")
-    // When a record is updated (e.g. email_status changed)
-    .on(
-      "postgres_changes",
-      { event: "UPDATE", schema: "public", table: "candidates" },
-      (payload) => {
-        const updated = payload.new as Candidate;
-        console.log("📡 Candidate updated:", updated);
-
-        setCandidates((prev) =>
-          prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c))
-        );
-
-        // Flash green highlight for updated row
-        setHighlightedRows((prev) => ({ ...prev, [updated.id]: "update" }));
-        setTimeout(() => {
-          setHighlightedRows((prev) => {
-            const { [updated.id]: _, ...rest } = prev;
-            return rest;
-          });
-        }, 2000);
-      }
-    )
-    // When a new record is inserted
-    .on(
-      "postgres_changes",
-      { event: "INSERT", schema: "public", table: "candidates" },
-      (payload) => {
-        const newCandidate = payload.new as Candidate;
-        console.log("🆕 New candidate added:", newCandidate);
-
-        setCandidates((prev) => [newCandidate, ...prev]);
-
-        // Flash yellow highlight for new row
-        setHighlightedRows((prev) => ({ ...prev, [newCandidate.id]: "new" }));
-        setTimeout(() => {
-          setHighlightedRows((prev) => {
-            const { [newCandidate.id]: _, ...rest } = prev;
-            return rest;
-          });
-        }, 2000);
-      }
-    )
-    .subscribe();
-
-  return () => {
-    console.log("🧹 Unsubscribing from candidate updates");
-    supabase.removeChannel(channel);
-  };
-}, [userId]);
-
-// ── Live Realtime Updates for Referees ───────────────────────────────────────
-useEffect(() => {
-  console.log("⚡️ Subscribing to referee updates...");
-
-  const channel = supabase
-    .channel("realtime:referees")
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "referees" },
-      (payload) => {
-        const updated = payload.new as Referee;
-        console.log("📡 Referee updated:", updated);
-
-        // ✅ Update candidates array so archived/unarchived refs reflect instantly
-        setCandidates((prev) =>
-          prev.map((c) => {
-            if (c.id !== updated.candidate_id) return c;
-
-            // remove this referee from the candidate’s list if archived
-            const withoutOld = (c.referees ?? []).filter((r) => r.id !== updated.id);
-            const newRefs = updated.is_archived ? withoutOld : [...withoutOld, updated];
-
-            return { ...c, referees: newRefs ?? [] };
-
-          })
-        );
-      }
-    )
-    .subscribe();
-
-  return () => {
-    console.log("🧹 Unsubscribing from referee updates");
-    supabase.removeChannel(channel);
-  };
-}, []);
-
-
-    // ── Derived counts ──────────────────────────────────────────────────────────
-  const pendingCount = useMemo(
-    () => requests.filter((r) => r.status === "pending").length,
-    [requests]
-  );
-  const overdueCount = useMemo(
-    () => requests.filter((r) => r.status === "overdue").length,
-    [requests]
-  );
-  const completedCount = useMemo(
-    () => requests.filter((r) => r.status === "completed").length,
-    [requests]
-  );
-
-const toggleExpand = (id: string) => {
-  setExpanded(prev => (prev === id ? null : id));
-};
-
-
-  const candidateRequests = (id: string) =>
-    requests.filter((r) => r.candidate_id === id);
-
-const handleAddCandidate = async (e: React.FormEvent) => {
-  e.preventDefault();
-  if (!newCandidate.full_name || !newCandidate.email) return;
-
-  setAdding(true); // start loading
-  const consentToken = nano();
-
-  try {
-// ── 1. Prepare and normalise candidate ───────────────────────────────
-const cleaned = trimAll({
-  full_name: newCandidate.full_name,
-  email: newCandidate.email,
-  mobile: newCandidate.mobile,
-});
-
-const candidatePayload = {
-  full_name: toTitleCaseName(cleaned.full_name),
-  email: normaliseEmail(cleaned.email),
-  mobile: cleaned.mobile ? ukToE164(cleaned.mobile) : null,
-  company_id: companyId,           // ✅ NEW — link candidate to recruiter’s company
-  created_by: userId,              // already existed, keep it
-  consent_token: consentToken,
-  status: "awaiting_consent",
-  consent_status: "pending",
-  template_id: newCandidate.template_id || null,
-};
-
-
-console.log("🧩 Normalised candidate payload:", candidatePayload);
-
-const { data: inserted, error } = await supabase
-  .from("candidates")
-  .insert([candidatePayload])
-  .select()
-  .single();
-
-
-    if (error) {
-      console.error("❌ DB insert error:", error);
-      toast.error("Error adding candidate");
-      return;
+      setRole((profile?.role as Role) ?? "user");
+      setCompanyId(profile?.company_id ?? null);
+      setLoadingProfile(false);
     }
 
-    console.log("✅ Inserted candidate:", inserted);
+    loadProfile();
+  }, [router]);
 
-    // ── 2. Send consent email ─────────────────────────────
-    const { data: emailResponse, error: emailError } =
-      await supabase.functions.invoke("send-consent-email", {
-        body: {
-          name: inserted.full_name,
-          email: inserted.email,
-          consent_token: inserted.consent_token,
-          companyName: settings?.company_name || "Refevo",
-        },
+  // Load data
+  useEffect(() => {
+    if (!companyId) return;
+    async function loadData() {
+      const { data: cands } = await supabase
+        .from("candidate_dashboard_stats")
+        .select("*")
+        .eq("company_id", companyId)
+        .order("created_at", { ascending: false });
+      if (cands) setCandidates(cands as Candidate[]);
+
+      const { data: tmpls } = await supabase
+        .from("reference_templates")
+        .select("id, name, description");
+      if (tmpls) setTemplates(tmpls);
+    }
+    loadData();
+  }, [companyId]);
+
+  const toggleExpand = (id: string) => {
+    setExpanded((prev) => (prev === id ? null : id));
+  };
+
+  const handleArchive = async (id: string, name: string) => {
+    if (!window.confirm(`Archive ${name}?`)) return;
+    await supabase
+      .from("candidates")
+      .update({ is_archived: true, archived_at: new Date().toISOString() })
+      .eq("id", id);
+    setCandidates((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, is_archived: true } : c))
+    );
+    toast.success(`${name} archived`);
+  };
+
+  const handleUnarchive = async (id: string, name: string) => {
+    if (!window.confirm(`Restore ${name}?`)) return;
+    await supabase
+      .from("candidates")
+      .update({ is_archived: false, archived_at: null })
+      .eq("id", id);
+    setCandidates((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, is_archived: false } : c))
+    );
+    toast.success(`${name} restored`);
+  };
+
+  const onRefreshRequests = async () => {
+    const { data } = await supabase.from("reference_requests").select("*");
+    if (data) setRequests(data as Request[]);
+  };
+
+  const handleAddCandidate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCandidate.full_name || !newCandidate.email) return;
+
+    setAdding(true);
+    const consentToken = nano();
+
+    try {
+      const cleaned = trimAll({
+        full_name: newCandidate.full_name,
+        email: newCandidate.email,
+        mobile: newCandidate.mobile,
       });
 
-    if (emailError) {
-      console.error("Failed to send consent email:", emailError);
-      toast.error("Candidate added, but email not sent");
-    } else {
-      console.log("📧 Consent email sent successfully:", emailResponse);
-      toast.success("Candidate added successfully");
+      const candidatePayload = {
+        full_name: toTitleCaseName(cleaned.full_name),
+        email: normaliseEmail(cleaned.email),
+        mobile: cleaned.mobile ? ukToE164(cleaned.mobile) : null,
+        company_id: companyId,
+        created_by: userId,
+        consent_token: consentToken,
+        status: "awaiting_consent",
+        consent_status: "pending",
+        template_id: newCandidate.template_id || null,
+      };
 
-      // 🟩 Update candidate email status to 'sent'
-const { error: updateError } = await supabase
-  .from("candidates")
-  .update({ email_status: "sent" })
-  .eq("id", inserted.id);
-
-if (updateError) {
-  console.error("❌ Failed to set email_status to sent:", updateError);
-} else {
-  console.log("📬 Email status set to 'sent' for:", inserted.id);
-}
-
-      await supabase
+      const { data: inserted } = await supabase
         .from("candidates")
-        .update({ email_status: "sent" })
-        .eq("id", inserted.id);
+        .insert([candidatePayload])
+        .select()
+        .single();
+
+      if (inserted) toast.success("Candidate added successfully");
+      setShowModal(false);
+      setNewCandidate({ full_name: "", email: "", mobile: "", template_id: "" });
+    } catch (err) {
+      console.error(err);
+      toast.error("Error adding candidate");
+    } finally {
+      setAdding(false);
     }
-
-    // ── 3. Refresh list ───────────────────────────────
-    const { data: refreshed, error: refreshError } = await supabase
-      .from("candidates")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    if (refreshError) {
-      console.error("❌ Error refreshing candidates:", refreshError);
-    } else if (refreshed) {
-      setCandidates(refreshed);
-    }
-
-    // ── 4. Reset modal form ───────────────────────────────
-    setNewCandidate({
-      full_name: "",
-      email: "",
-      mobile: "",
-      template_id: "",
-    });
-    setShowModal(false);
-  } catch (err) {
-    console.error("Unexpected error in handleAddCandidate:", err);
-    toast.error("Something went wrong while adding candidate");
-  } finally {
-    // ✅ Always reset loading state even if something fails
-    setAdding(false);
-  }
-};
-
-  // ── Archive Candidate ───────────────────────────────────────────────
-const handleArchiveCandidate = async (candidateId: string, name: string) => {
-  if (!canManage) return; // UI guard
-
-  const confirmArchive = window.confirm(
-    `Archive ${name}? They’ll be hidden from standard users.`
-  );
-  if (!confirmArchive) return;
-
-  try {
-    const { error } = await supabase
-      .from("candidates")
-      .update({
-        is_archived: true,                 
-        archived_at: new Date().toISOString(),
-        archived_by: userId ?? null,
-      })
-      .eq("id", candidateId);
-
-    if (error) throw error;
-
-    toast.success(`${name} archived`);
-    setCandidates((prev) =>
-      prev.map((c) => (c.id === candidateId ? { ...c, is_archived: true, archived_at: new Date().toISOString(), archived_by: userId ?? null } : c))
-    );
-  } catch (err) {
-    console.error("Archive error:", err);
-    toast.error("Failed to archive candidate");
-  }
-};
-
-
-
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    router.push("/login");
   };
-const handleTestEmail = async () => {
-  try {
-    setSending(true);
-    const { error } = await supabase.functions.invoke("send-reference-email", {
-      body: {
-        id: "test-ref-id-001", // dummy reference ID for link generation
-        full_name: "Aaron Barnett", // recipient name
-        email: "barnett.aaron@gmail.com", // your test email
-        candidate_name: "Jamie Taylor",
-        company_name: "Appetite4Work",
-        sender_name: "Aaron from Appetite4Work",
-      },
-    });
+const [sortBy, setSortBy] = useState<
+  "created_desc" | "created_asc" | "name_asc" | "name_desc"
+>("created_desc");
 
-    if (error) throw error;
-    toast.success("Test reference email sent!");
-  } catch (err) {
-    console.error(err);
-    toast.error("Failed to send test reference email");
-  } finally {
-    setSending(false);
-  }
-};
+const [currentPage, setCurrentPage] = useState(1);
+const pageSize = 10; // adjust per your preference
 
+  const filteredCandidates = useMemo(() => {
+  let list = [...candidates];
 
-
-const handleUnarchiveCandidate = async (candidateId: string, name: string) => {
-  if (!canManage) return;
-
-  const confirmUnarchive = window.confirm(`Restore ${name}?`);
-  if (!confirmUnarchive) return;
-
-  try {
-    const { error } = await supabase
-      .from("candidates")
-      .update({
-        is_archived: false,
-        archived_at: null,
-        archived_by: null,
-      })
-      .eq("id", candidateId);
-
-    if (error) throw error;
-
-    toast.success(`${name} restored`);
-    setCandidates((prev) =>
-      prev.map((c) => (c.id === candidateId ? { ...c, is_archived: false, archived_at: null, archived_by: null } : c))
-    );
-  } catch (err) {
-    console.error("Unarchive error:", err);
-    toast.error("Failed to restore candidate");
-  }
-};
-
-// ── Resend Consent + Referee Invite ───────────────────────────────────────────
-const handleResendInvite = async (candidate: Candidate) => {
-  if (!candidate.email || !candidate.full_name) {
-    toast.error("Missing candidate info");
-    return;
-  }
-
-  try {
-    // ✅ Define token before use
-    const token = candidate.consent_token || nano(); // nano() creates a new one if missing
-
-    const { data, error } = await supabase.functions.invoke("send-consent-email", {
-      body: {
-        name: candidate.full_name,
-        email: candidate.email,
-        consent_token: token,  // ✅ matches backend key
-        companyName: settings?.company_name || null,
-
-      },
-    });
-
-    if (error) throw error;
-
-    toast.success("Consent email re-sent");
-    console.log("📧 Resent invite:", data);
-  } catch (err) {
-    console.error("Resend failed:", err);
-    toast.error("Failed to resend invite");
-  }
-};
-
-
-// ── Derived Data ─────────────────────────────────────────────────────────────
-const filteredCandidates = useMemo(() => {
-  let result = [...candidates];
-
-  // search
+  // Search
   if (search.trim()) {
     const s = search.toLowerCase();
-    result = result.filter(
+    list = list.filter(
       (c) =>
         c.full_name.toLowerCase().includes(s) ||
         c.email.toLowerCase().includes(s)
     );
   }
 
-  // view filter
-  if (viewMode === "mine") {
-    result = result.filter((c) => c.created_by === userId);
-  } else if (viewMode === "others") {
-    result = result.filter((c) => c.created_by !== userId);
-  }
+  // View filters
+  if (viewMode === "mine") list = list.filter((c) => c.created_by === userId);
+  if (viewMode === "others") list = list.filter((c) => c.created_by !== userId);
+  if (!showArchived) list = list.filter((c) => !c.is_archived);
 
-  // hide archived by default
-  if (!showArchived) {
-    result = result.filter((c) => !c.is_archived);
-  }
-
-  // sort
+  // Sort
   switch (sortBy) {
+    case "created_asc":
+      list.sort(
+        (a, b) =>
+          new Date(a.created_at || "").getTime() -
+          new Date(b.created_at || "").getTime()
+      );
+      break;
     case "name_asc":
-      result.sort((a, b) => a.full_name.localeCompare(b.full_name));
+      list.sort((a, b) => a.full_name.localeCompare(b.full_name));
       break;
     case "name_desc":
-      result.sort((a, b) => b.full_name.localeCompare(a.full_name));
+      list.sort((a, b) => b.full_name.localeCompare(a.full_name));
       break;
-    case "created_asc":
-      result.sort((a, b) => {
-        const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
-        const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
-        return dateA - dateB;
-      });
-      break;
-    default: // created_desc
-      result.sort((a, b) => {
-        const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
-        const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
-        return dateB - dateA;
-      });
+    default:
+      // created_desc
+      list.sort(
+        (a, b) =>
+          new Date(b.created_at || "").getTime() -
+          new Date(a.created_at || "").getTime()
+      );
   }
 
-  // ✅ Return only data – no JSX here
-  return result;
-}, [candidates, search, sortBy, viewMode, userId, showArchived]);
+  return list;
+}, [candidates, search, viewMode, userId, showArchived, sortBy]);
 
 
-
-    // ── Render ─────────────────────────────────────────────────────────────────
   if (loadingProfile) {
     return (
-      <div className="flex items-center justify-center min-h-screen text-gray-600">
+      <div className="min-h-screen flex items-center justify-center text-gray-600">
         Loading your profile...
       </div>
     );
   }
 
-// ── Render ───────────────────────────────────────────────────────────────────
-return (
-  <div className="min-h-screen bg-gray-50 p-8">
-    <div className="max-w-7xl mx-auto space-y-8">
+  return (
+    <div className="min-h-screen flex flex-col bg-[#F3F6F8] text-gray-900">
+      <div className="h-1 bg-[#0A1A2F]" />
+
       {/* Header */}
-      <div className="flex justify-between items-start gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Reference Dashboard</h1>
-          {userEmail && (
-            <p className="text-sm text-gray-500 mt-1">
-              👋 Welcome, <span className="font-medium">{userEmail}</span>
-            </p>
-          )}
-        </div>
-
-        <div className="flex gap-2">
-          {role !== "user" && (
-            <button
-              onClick={handleTestEmail}
-              disabled={sending}
-              className={`px-4 py-2 rounded-lg font-medium shadow transition ${
-                sending
-                  ? "bg-gray-400 text-white cursor-not-allowed"
-                  : "bg-green-600 hover:bg-green-700 text-white"
-              }`}
-            >
-              {sending ? "Sending..." : "📧 Test Email"}
-            </button>
-          )}
-          <button
-            onClick={() => setShowModal(true)}
-            className="px-4 py-2 rounded-lg bg-blue-600 text-white font-medium shadow hover:bg-blue-700 transition"
-          >
-            + Add Candidate
-          </button>
-          <button
-            onClick={handleSignOut}
-            className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100"
-          >
-            Sign Out
-          </button>
-        </div>
-      </div>
-
-      {/* Filters and Search */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mt-6">
-        <div className="flex items-center gap-2">
-          {/* Search */}
-          <input
-            type="text"
-            placeholder="Search candidates..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 w-60 text-sm"
-          />
-
-          {/* Sort */}
-          <select
-            value={sortBy}
-            onChange={(e) =>
-              setSortBy(
-                e.target.value as
-                  | "created_desc"
-                  | "created_asc"
-                  | "name_asc"
-                  | "name_desc"
-              )
-            }
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-          >
-            <option value="created_desc">Newest first</option>
-            <option value="created_asc">Oldest first</option>
-            <option value="name_asc">Name A–Z</option>
-            <option value="name_desc">Name Z–A</option>
-          </select>
-
-          {/* View filter */}
-          <div className="flex items-center gap-1">
-            {["mine", "others", "all"].map((mode) => (
-              <button
-                key={mode}
-                onClick={() => setViewMode(mode as "mine" | "others" | "all")}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
-                  viewMode === mode
-                    ? "bg-blue-600 text-white"
-                    : "bg-gray-100 hover:bg-gray-200 text-gray-700"
-                }`}
-              >
-                {mode.charAt(0).toUpperCase() + mode.slice(1)}
-              </button>
-            ))}
+      <header className="sticky top-0 z-40 bg-white/90 border-b border-slate-200 shadow-sm">
+        <div className="max-w-7xl mx-auto flex justify-between items-center py-3 px-6">
+          <div className="text-sm text-slate-600 flex items-center gap-2">
+            <span className="font-medium text-slate-900">{userEmail}</span>
+            <span className="text-slate-400">•</span>
+            <span>{new Date().toLocaleDateString("en-GB")}</span>
           </div>
-
-          {/* Show archived toggle (manager/admin only) */}
-          {canManage && (
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => setShowArchived(!showArchived)}
-              className={`ml-3 flex items-center gap-2 text-sm select-none transition ${
-                showArchived ? "text-teal-600" : "text-gray-600"
-              }`}
+              onClick={() => setShowModal(true)}
+              className="px-4 py-2 rounded-lg bg-[#00B3B0] text-white font-medium hover:bg-[#009B99]"
             >
-              <span>Show archived candidates</span>
-              <span
-                className={`relative inline-flex h-5 w-10 rounded-full transition-colors duration-300 ${
-                  showArchived ? "bg-teal-500" : "bg-gray-300"
-                }`}
-              >
-                <span
-                  className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform duration-300 ${
-                    showArchived ? "translate-x-5" : "translate-x-0"
-                  }`}
-                />
-              </span>
+              + Add Candidate
             </button>
-          )}
+            <button
+              onClick={async () => {
+                await supabase.auth.signOut();
+                router.push("/login");
+              }}
+              className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100"
+            >
+              Sign Out
+            </button>
+          </div>
         </div>
-      </div>
+      </header>
 
-      {/* Candidate Table */}
-      <div className="bg-white rounded-xl shadow overflow-hidden mt-6">
+      {/* Content */}
+      <main className="flex-1 max-w-7xl mx-auto w-full px-6 py-8 space-y-8">
+{/* Toolbar – search, filters, view mode, sorting */}
+<div className="flex flex-col md:flex-row md:items-center justify-between gap-3 flex-wrap">
+  {/* Left group */}
+  <div className="flex items-center flex-wrap gap-3">
+    <input
+      type="text"
+      placeholder="Search candidates..."
+      value={search}
+      onChange={(e) => setSearch(e.target.value)}
+      className="border border-gray-300 rounded-lg px-3 py-2 w-60 text-sm"
+    />
+
+    {/* View Mode (Mine / Others / All) */}
+<div className="flex items-center bg-white rounded-full border border-slate-300 shadow-sm overflow-hidden">
+  {(["mine", "others", "all"] as const).map((m, i) => {
+    const active = viewMode === m;
+    const label =
+      m === "mine" ? "Mine" : m === "others" ? "Others" : "All";
+
+    return (
+      <button
+        key={m}
+        onClick={() => setViewMode(m)}
+        className={`relative px-4 py-1.5 text-sm font-medium transition-all ${
+          active
+            ? "bg-[#00B3B0] text-white shadow-inner"
+            : "text-slate-700 hover:bg-slate-100"
+        } ${i === 0 ? "rounded-l-full" : i === 2 ? "rounded-r-full" : ""}`}
+      >
+        {label}
+      </button>
+    );
+  })}
+</div>
+
+
+    {/* Sort dropdown */}
+    <select
+      value={sortBy}
+      onChange={(e) =>
+        setSortBy(e.target.value as "created_desc" | "created_asc" | "name_asc" | "name_desc")
+      }
+      className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white"
+    >
+      <option value="created_desc">Newest first</option>
+      <option value="created_asc">Oldest first</option>
+      <option value="name_asc">Name A–Z</option>
+      <option value="name_desc">Name Z–A</option>
+    </select>
+  </div>
+
+  {/* Right group */}
+{canManage && (
+  <div className="flex items-center gap-2">
+    <span className="text-sm text-gray-700 select-none">Show archived</span>
+    <button
+      onClick={() => setShowArchived(!showArchived)}
+      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-300 ${
+        showArchived ? "bg-[#00B3B0]" : "bg-gray-300"
+      }`}
+    >
+      <span
+        className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform duration-300 ${
+          showArchived ? "translate-x-5" : "translate-x-1"
+        }`}
+      />
+    </button>
+  </div>
+)}
+
+</div>
+
+
         {filteredCandidates.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <div className="text-5xl mb-4">🧾</div>
@@ -832,333 +505,82 @@ return (
             </p>
           </div>
         ) : (
-         <table className="w-full text-sm table-auto border-collapse text-left">
-
-
-<thead className="bg-gray-100 text-gray-700 border-b border-gray-200">
-  <tr>
-    <th className="px-4 py-3 font-semibold text-sm text-left w-[22%]">Candidate</th>
-    <th className="px-4 py-3 font-semibold text-sm text-left w-[25%]">Email</th>
-    <th className="px-4 py-3 font-semibold text-sm text-left w-[15%]">Mobile</th>
-   <th className="px-4 py-3 font-semibold text-sm text-left w-[14%]">Status</th>
-<th className="px-4 py-3 font-semibold text-sm text-left w-[10%]">Referees</th>
-
-
-    <th className="px-4 py-3 font-semibold text-sm text-center w-[14%]">Added</th>
-    <th className="px-4 py-3 font-semibold text-sm text-right w-[10%]">Action</th>
-
-  </tr>
-</thead>
-
-
-<tbody className="[&>tr:nth-child(even)]:bg-gray-50 divide-y divide-gray-100">
-
-
- {filteredCandidates
+          <div className="space-y-4">
+            {filteredCandidates
   .slice((currentPage - 1) * pageSize, currentPage * pageSize)
-  .map((c) => {
-    console.log(
-      "🧪 Row render:",
-      c.full_name,
-      "→ consent_status:",
-      c.consent_status,
-      "referees:",
-      c.referees?.length
-    );
+  .map((c) => (
+<CandidateCard
+  key={c.id}
+  c={c}
+  role={role}
+  canManage={canManage}
+  expanded={expanded}
+  onToggleExpand={toggleExpand}
+  onArchive={handleArchive}        // ✅ matches your defined function
+  onUnarchive={handleUnarchive}    // ✅ matches your defined function
+  onRefreshRequests={onRefreshRequests}
+  companyId={companyId}
+  setRequests={setRequests}
+  highlightedRows={highlightedRows}
+/>
 
-    return (
-      <React.Fragment key={c.id}>
-        <tr
-          className={`transition-colors hover:bg-blue-50/40 ${
-            highlightedRows[c.id] === "update"
-              ? "bg-green-50"
-              : highlightedRows[c.id] === "new"
-              ? "bg-yellow-50"
-              : ""
-          }`}
-        >
+  ))}
 
-
-        <td className="px-4 py-3 align-middle text-gray-800 font-medium truncate">
-          {c.full_name || "-"}
-        </td>
-
-<td className="px-4 py-3 align-middle w-[25%]">
-  <div className="flex items-center justify-between gap-2">
-    <span className="truncate text-gray-700">{c.email}</span>
-    <div className="flex-shrink-0">
-      <StatusBadge status={c.email_status || "unknown"} />
-    </div>
-  </div>
-</td>
-
-
-
-        <td className="px-4 py-3 align-middle text-gray-600 truncate">
-          {c.mobile || "-"}
-        </td>
-
-{/* Status / Referees */}
-<td className="px-4 py-3 align-middle w-[14%]">
-  {(() => {
-    const cs = c.consent_status as string | null | undefined;
-
-    // ✅ Consent granted / consented
-    if (["granted", "consented"].includes(cs || "")) {
-      return (
-        <span
-          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-green-100 text-green-700 whitespace-nowrap"
-          title={
-            c.consent_at
-              ? `Consent granted on ${new Date(
-                  c.consent_at
-                ).toLocaleDateString("en-GB")}`
-              : "Candidate has granted consent"
-          }
-        >
-          <span>✅</span>
-          <span>Consent Granted</span>
-        </span>
-      );
-    }
-
-    // ⏳ Awaiting consent (hasn't approved yet)
-    if (
-      ["pending", "awaiting", "awaiting_consent", "awaiting_referees"].includes(
-        cs || ""
-      )
-    ) {
-      return (
-        <span
-          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-yellow-100 text-yellow-800 whitespace-nowrap"
-          title="Waiting for candidate to grant consent"
-        >
-          <span>⏳</span>
-          <span>Awaiting Consent</span>
-        </span>
-      );
-    }
-
-    // ❌ Declined
-    if (cs === "declined") {
-      return (
-        <span
-          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-red-100 text-red-700 whitespace-nowrap"
-          title="Candidate declined consent"
-        >
-          <span>❌</span>
-          <span>Declined</span>
-        </span>
-      );
-    }
-
-    // ❔ Fallback / missing / weird data
-    return (
-      <span
-        className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-gray-100 text-gray-700 whitespace-nowrap"
-        title="Consent status unknown"
-      >
-        <span>❔</span>
-        <span>Unknown</span>
-      </span>
-    );
-  })()}
-</td>
-
-
-
-
-{/* Referee Count */}
-{/* Referee Progress */}
-<td className="px-4 py-3 align-middle text-sm text-gray-700 w-[10%]">
-  <div className="flex flex-col items-start">
-    <span className="font-medium text-gray-800">
-      {c.completed_referee_count ?? 0} of {c.referee_count ?? 0}
-    </span>
-    <span className="text-xs text-gray-500">completed</span>
-  </div>
-</td>
-
-
-
-
-
-
-
-{/* Added */}
-<td className="px-4 py-3 align-middle text-xs text-gray-500 whitespace-nowrap text-center w-[14%]">
-  {c.created_at
-    ? new Date(c.created_at as string).toLocaleDateString("en-GB")
-    : "-"}
-</td>
-
-
-
-<td className="px-4 py-3 align-middle text-right">
-  <div className="flex items-center justify-end gap-2">
+{/* Pagination Controls */}
+{filteredCandidates.length > pageSize && (
+  <div className="flex justify-center items-center gap-3 pt-6">
     <button
-      onClick={() => setExpanded((prev) => (prev === c.id ? null : c.id))}
-      className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+      disabled={currentPage === 1}
+      className={`px-4 py-1.5 rounded-full border text-sm font-medium transition-all ${
+        currentPage === 1
+          ? "opacity-40 cursor-not-allowed bg-gray-100 text-gray-500"
+          : "bg-white text-slate-700 hover:bg-slate-100 border-slate-300"
+      }`}
     >
-      {expanded === c.id ? "Hide" : "View"}
+      Prev
     </button>
 
-    {canManage &&
-      (!c.is_archived ? (
-        <button
-          onClick={() => handleArchiveCandidate(c.id, c.full_name)}
-          className="text-red-500 hover:text-red-700 text-sm font-medium"
-        >
-          Archive
-        </button>
-      ) : (
-        <button
-          onClick={() => handleUnarchiveCandidate(c.id, c.full_name)}
-          className="text-teal-600 hover:text-teal-800 text-sm font-medium"
-        >
-          Unarchive
-        </button>
-      ))}
-  </div>
-</td>
+    <span className="text-sm text-slate-600">
+      Page {currentPage} of {Math.ceil(filteredCandidates.length / pageSize)}
+    </span>
 
-      </tr>
-
-{expanded === c.id && (
-  <tr className="bg-gray-50">
-    <td colSpan={6} className="p-4">
-      {(() => {
-        console.log("🧠 Candidate object when expanding:", c);
-        return (
-          <CandidateDetails
-            candidate={c}
-            role={role}
-            companyId={companyId}
-            onRefresh={async () => {
-              const { data } = await supabase
-                .from("reference_requests")
-                .select("*");
-              if (data) setRequests(data);
-            }}
-          />
-        );
-      })()}
-    </td>
-  </tr>
-)}
-</React.Fragment>
-);
-})}
-</tbody>
-
-
-          </table>
-        )}
-
- {/* Pagination Controls */}
-{filteredCandidates.length > pageSize && (
-  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between px-6 py-4 border-t border-gray-200 bg-gray-50 text-sm gap-3">
-    <p className="text-gray-600">
-      Showing{" "}
-      <span className="font-medium">
-        {(currentPage - 1) * pageSize + 1}
-      </span>{" "}
-      –{" "}
-      <span className="font-medium">
-        {Math.min(currentPage * pageSize, filteredCandidates.length)}
-      </span>{" "}
-      of{" "}
-      <span className="font-medium">{filteredCandidates.length}</span> candidates
-    </p>
-
-    {/* Page Numbers */}
-    <div className="flex items-center justify-center gap-1">
-      <button
-        onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-        disabled={currentPage === 1}
-        className={`px-3 py-1 rounded-md border text-sm font-medium transition ${
-          currentPage === 1
-            ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-            : "bg-white hover:bg-gray-100 text-gray-700 border-gray-300"
-        }`}
-      >
-        ← Prev
-      </button>
-
-      {/* Page buttons */}
-      {Array.from(
-        { length: Math.ceil(filteredCandidates.length / pageSize) },
-        (_, i) => i + 1
-      ).map((page) => {
-        // Show only up to 5 visible buttons around current page
-        if (
-          page === 1 ||
-          page === Math.ceil(filteredCandidates.length / pageSize) ||
-          (page >= currentPage - 2 && page <= currentPage + 2)
-        ) {
-          return (
-            <button
-              key={page}
-              onClick={() => setCurrentPage(page)}
-              className={`px-3 py-1 rounded-md border text-sm font-medium transition ${
-                currentPage === page
-                  ? "bg-[#00B3B0] text-white border-blue-600"
-                  : "bg-white text-gray-700 hover:bg-gray-100 border-gray-300"
-              }`}
-            >
-              {page}
-            </button>
-          );
-        } else if (
-          (page === currentPage - 3 && page > 1) ||
-          (page === currentPage + 3 &&
-            page < Math.ceil(filteredCandidates.length / pageSize))
-        ) {
-          return (
-            <span
-              key={`ellipsis-${page}`}
-              className="px-2 text-gray-400 select-none"
-            >
-              ...
-            </span>
-          );
-        }
-        return null;
-      })}
-
-      <button
-        onClick={() =>
-          setCurrentPage((p) =>
-            p * pageSize < filteredCandidates.length ? p + 1 : p
+    <button
+      onClick={() =>
+        setCurrentPage((p) =>
+          Math.min(
+            p + 1,
+            Math.ceil(filteredCandidates.length / pageSize)
           )
-        }
-        disabled={currentPage * pageSize >= filteredCandidates.length}
-        className={`px-3 py-1 rounded-md border text-sm font-medium transition ${
-          currentPage * pageSize >= filteredCandidates.length
-            ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-            : "bg-white hover:bg-gray-100 text-gray-700 border-gray-300"
-        }`}
-      >
-        Next →
-      </button>
-    </div>
+        )
+      }
+      disabled={
+        currentPage === Math.ceil(filteredCandidates.length / pageSize)
+      }
+      className={`px-4 py-1.5 rounded-full border text-sm font-medium transition-all ${
+        currentPage === Math.ceil(filteredCandidates.length / pageSize)
+          ? "opacity-40 cursor-not-allowed bg-gray-100 text-gray-500"
+          : "bg-[#00B3B0] text-white hover:bg-[#009B99] border-transparent"
+      }`}
+    >
+      Next
+    </button>
   </div>
 )}
 
-
-
-      </div>
+          </div>
+        )}
+      </main>
 
       {/* Add Candidate Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 relative animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 relative">
             <h2 className="text-xl font-semibold text-slate-900 mb-4">
               Add New Candidate
             </h2>
 
             <form onSubmit={handleAddCandidate} className="space-y-4">
-              {/* Full name */}
               <div>
                 <label className="block text-sm font-medium text-slate-700">
                   Full name
@@ -1169,13 +591,12 @@ return (
                   onChange={(e) =>
                     setNewCandidate({ ...newCandidate, full_name: e.target.value })
                   }
-                  className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
                   placeholder="e.g. Alex Johnson"
                   required
                 />
               </div>
 
-              {/* Email */}
               <div>
                 <label className="block text-sm font-medium text-slate-700">
                   Email
@@ -1186,13 +607,12 @@ return (
                   onChange={(e) =>
                     setNewCandidate({ ...newCandidate, email: e.target.value })
                   }
-                  className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
                   placeholder="alex@example.com"
                   required
                 />
               </div>
 
-              {/* Mobile */}
               <div>
                 <label className="block text-sm font-medium text-slate-700">
                   Mobile (optional)
@@ -1203,12 +623,11 @@ return (
                   onChange={(e) =>
                     setNewCandidate({ ...newCandidate, mobile: e.target.value })
                   }
-                  className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
                   placeholder="07..."
                 />
               </div>
 
-              {/* Reference Template */}
               <div>
                 <label className="block text-sm font-medium text-slate-700">
                   Reference Type
@@ -1218,7 +637,7 @@ return (
                   onChange={(e) =>
                     setNewCandidate({ ...newCandidate, template_id: e.target.value })
                   }
-                  className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
                 >
                   <option value="">Select reference type</option>
                   {templates.map((t) => (
@@ -1227,42 +646,32 @@ return (
                     </option>
                   ))}
                 </select>
-
-                {newCandidate.template_id && (
-                  <p className="mt-2 text-xs text-slate-500 leading-snug">
-                    {templates.find((t) => t.id === newCandidate.template_id)?.description ||
-                      "Select a template to view its details."}
-                  </p>
-                )}
               </div>
 
-              {/* Buttons */}
-              <div className="flex justify-end gap-3 mt-6">
+              <div className="flex justify-end gap-3 pt-4">
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="px-4 py-2 text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-100 transition"
+                  className="px-4 py-2 text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-100 text-sm"
                 >
                   Cancel
                 </button>
-<button
-  type="submit"
-  disabled={adding}
-  className={`px-4 py-2 rounded-lg shadow transition font-medium ${
-    adding
-      ? "bg-blue-400 cursor-not-allowed text-white"
-      : "bg-blue-600 hover:bg-blue-700 text-white"
-  }`}
->
-  {adding ? "Sending…" : "Save"}
-</button>
-
+                <button
+                  type="submit"
+                  disabled={adding}
+                  className={`px-4 py-2 rounded-lg shadow font-medium text-sm ${
+                    adding
+                      ? "bg-gray-400 cursor-not-allowed text-white"
+                      : "bg-[#00B3B0] hover:bg-[#009B99] text-white"
+                  }`}
+                >
+                  {adding ? "Saving…" : "Save"}
+                </button>
               </div>
             </form>
           </div>
         </div>
       )}
     </div>
-  </div>
-);
+  );
 }
