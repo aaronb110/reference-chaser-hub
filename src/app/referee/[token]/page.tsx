@@ -17,38 +17,45 @@ type RefereeRow = {
   candidate: Candidate[] | null;
 };
 
-// ✅ Explicitly drop Next.js PageProps inference by typing props as `any`
-export default async function RefereePage(props: any) {
-  const params = props.params as { token: string };
+export default async function RefereePage({
+  params,
+}: {
+  params: Promise<{ token: string }>;
+}) {
+  const { token } = await params; // ✅ new syntax
   const supabase = await createServerSupabase();
 
-  // 🔹 1. Get referee data
+  // 1️⃣ Get referee data
   const { data: referee, error } = await supabase
     .from("referees")
-    .select(
-      `
-        id,
-        name,
-        email,
-        status,
-        type,
-        template_id,
-        candidate:candidates (id, full_name)
-      `
-    )
-    .eq("token", params.token)
+    .select(`
+      id,
+      name,
+      email,
+      status,
+      type,
+      template_id,
+      candidate:candidate_id (id, full_name)
+    `)
+    .eq("token", token)
     .single<RefereeRow>();
+
+  console.log("🎯 Referee record:", referee);
+  console.log("📄 Template ID:", referee?.template_id);
 
   if (error || !referee) return notFound();
 
-  // 🔹 2. Get template data
+  // 2️⃣ Get template data
   const { data: template, error: tmplError } = await supabase
     .from("reference_templates")
-    .select("id, name, questions")
+    .select("id, name, questions, is_active")
     .eq("id", referee.template_id)
     .single();
 
-  if (tmplError || !template) {
+  console.log("🧩 Template lookup result:", template);
+  console.log("⚙️ Template fetch error:", tmplError);
+
+  if (tmplError || !template || template.is_active === false) {
     return (
       <div className="p-8 text-center text-slate-600">
         <p>Template not found or inactive.</p>
@@ -56,21 +63,21 @@ export default async function RefereePage(props: any) {
     );
   }
 
-  // 🔹 3. Parse template questions
+  // 3️⃣ Parse template questions
   const templateFields = Array.isArray(template.questions)
     ? template.questions
     : [];
 
-  // 🔹 4. Resolve candidate_id safely
+  // 4️⃣ Resolve candidate safely
   const candidateId = (() => {
     const c = referee.candidate;
     if (!c) return null;
     if (Array.isArray(c)) return c[0]?.id || null;
-    // @ts-expect-error - Supabase can return object or array, safe to ignore
+    // @ts-expect-error Supabase can return object or array
     return c.id || null;
   })();
 
-  // 🔹 5. Render page + pass template fields into form
+  // 5️⃣ Render the page
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50">
       <div className="bg-white p-8 rounded-xl shadow text-center">

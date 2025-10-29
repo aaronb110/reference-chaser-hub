@@ -26,6 +26,26 @@ type Referee = {
   ref_type?: string;   // optional legacy key for safety
 };
 
+type RefereeWithCandidate = {
+  id: string;
+  name: string;
+  email: string;
+  status?: string;
+  candidate_id: string;
+  token: string;
+  candidate: {
+    id: string;
+    full_name: string;
+    consent_token?: string | null;
+    reference_type?: string | null;
+    reference_years_required?: number | null;
+    template_id?: string | null;
+    company_id?: string | null;
+    created_by?: string | null;
+  };
+};
+
+
 
 export default function AddRefereesPage() {
   const { token } = useParams<{ token: string }>();
@@ -43,98 +63,124 @@ const [referees, setReferees] = useState<Referee[]>([]);
   
 
   // ── Verify token ───────────────────────────────────────
-  useEffect(() => {
-    async function verifyToken() {
-      const cleanToken = token?.toString().trim();
+useEffect(() => {
+  async function verifyToken() {
+    const cleanToken = token?.toString().trim();
 
-      const { data: cand, error: candErr } = await supabase
-        .from("candidates")
-        .select(
-          "id, full_name, consent_token, reference_type, reference_years_required, template_id, company_id, created_by"
-        )
-        .eq("consent_token", cleanToken)
-        .maybeSingle();
-
-      if (candErr) console.error("❌ Supabase query error:", candErr);
-      if (!cand) {
-        setError("Invalid or expired link.");
-        setLoading(false);
-        return;
-      }
-
-      // ✅ Mark consent as given (first time they open this page)
-// ✅ Only update if not already consented
-console.log("🧩 Token being sent:", cleanToken);
-
-const { data, error } = await supabase
-  .from("candidates")
-  .update({
-    consent_status: "granted",
-    consent_at: new Date().toISOString(),
-  })
-  .eq("consent_token", cleanToken)
-  .select("id, consent_token, consent_status");
-
-if (error) {
-  console.error("❌ Failed to record consent:", error.message);
-} else if (data && data.length > 0) {
-  console.log("✅ Candidate consent recorded successfully:", data);
-} else {
-  console.warn("⚠️ No matching candidate found for token:", cleanToken);
-}
+    // 1️⃣ Get the referee by their unique link token
+    const { data: referee, error: refErr } = (await supabase
+  .from("referees")
+  .select(`
+    id,
+    name,
+    email,
+    status,
+    candidate_id,
+    token,
+    candidate:candidate_id (
+      id,
+      full_name,
+      consent_token,
+      reference_type,
+      reference_years_required,
+      template_id,
+      company_id,
+      created_by
+    )
+  `)
+  .eq("token", cleanToken)
+  .maybeSingle()) as unknown as { data: RefereeWithCandidate | null; error: any };
 
 
-
-      let config: any = null;
-      if (cand.template_id) {
-        const { data: cfg } = await supabase
-          .from("reference_templates")
-          .select("id, required_refs, ref_types, description")
-          .eq("id", cand.template_id)
-          .maybeSingle();
-        if (cfg) config = cfg;
-      }
-
-const fullCandidate = { ...(cand as CandidateRow), config };
-setCandidate(fullCandidate);
-console.log("📋 Loaded candidate (full):", fullCandidate);
-
-
-
-// ── Build referee placeholders ────────────────────────────────
-if (config) {
-  const total = config.required_refs ?? 1; // default to 1 if not set
-  const types = Array.isArray(config.ref_types) && config.ref_types.length > 0
-    ? config.ref_types
-    : ["reference"];
-
-  const refs = Array.from({ length: total }).map((_, i) => {
-    const t = types[i % types.length]; // cycle through types if needed
-    const typeString =
-      typeof t === "string"
-        ? t
-        : t.value || t.label || "reference";
-
-    return {
-      name: "",
-      email: "",
-      type: typeString,
-      label: typeof t === "object" ? t.label : undefined,
-      ref_type: typeof t === "object" ? t.value : undefined,
-    };
-  });
-
-  console.log("🧱 Generated referee placeholders:", refs);
-  setReferees(refs);
-}
-
-
-
-      setLoading(false);
+    if (refErr) {
+      console.error("❌ Supabase referee query error:", refErr);
     }
 
-    if (token) verifyToken();
-  }, [token]);
+    if (!referee) {
+      setError("Invalid or expired link.");
+      setLoading(false);
+      return;
+    }
+
+    console.log("✅ Verified referee link for:", referee.name, "→ Candidate:", referee.candidate.full_name);
+
+
+    // 2️⃣ Put candidate into state, matching CandidateRow exactly
+    setCandidate({
+      id: referee.candidate.id,
+      full_name: referee.candidate.full_name,
+      consent_token: referee.candidate.consent_token ?? "",
+      reference_type: referee.candidate.reference_type ?? undefined,
+      reference_years_required:
+        referee.candidate.reference_years_required ?? undefined,
+      template_id: referee.candidate.template_id ?? null,
+      company_id: referee.candidate.company_id ?? null,
+      created_by: referee.candidate.created_by ?? null,
+      config: undefined,
+    });
+
+    // 3️⃣ Load template data for this candidate
+console.log("🎯 Referee:", referee);
+console.log("📎 Candidate inside referee:", referee?.candidate);
+console.log("📄 Template ID:", referee?.candidate?.template_id);
+
+
+    const candidateData = (referee as any).candidate || (referee as any).candidates || null;
+
+console.log("📎 Candidate data object:", candidateData);
+
+const templateId = candidateData?.template_id;
+if (!templateId) {
+  console.error("❌ No template ID found for referee candidate");
+  setError("Template not found or inactive");
+  setLoading(false);
+  return;
+}
+
+    if (!templateId) {
+      setError("Template not found or inactive");
+      setLoading(false);
+      return;
+    }
+
+    const { data: template, error: tmplErr } = await supabase
+      .from("reference_templates")
+      .select("*")
+      .eq("id", templateId)
+      .maybeSingle();
+
+    if (tmplErr) {
+      console.error("❌ Template fetch error:", tmplErr);
+    }
+
+    if (!template || template.is_active === false) {
+      setError("Template not found or inactive");
+      setLoading(false);
+      return;
+    }
+
+    // 4️⃣ Load all referees for this candidate (for UI display)
+    const { data: refs, error: refsErr } = await supabase
+      .from("referees")
+      .select("*")
+      .eq("candidate_id", referee.candidate.id)
+      .eq("is_archived", false);
+
+    if (refsErr) {
+      console.error("❌ Error loading referees list:", refsErr);
+    } else {
+      setReferees(refs || []);
+    }
+
+    setLoading(false);
+  }
+
+  verifyToken();
+}, [token]);
+
+
+
+      
 
   // ── Handle Submit ───────────────────────────────────────
   async function handleSubmit(e: React.FormEvent) {
@@ -152,95 +198,118 @@ if (config) {
     setShowConfirmModal(true);
   }
 
-  // ── Confirm & Save ───────────────────────────────────────
-  async function confirmReferees() {
-    if (!candidate) return;
-    setConfirming(true);
-    try {
-      
-// 1️⃣ Insert referees
-const { data: insertedReferees, error: refErr } = await supabase
-  .from("referees")
-  .insert(
-    referees.map((r) => ({
-      candidate_id: candidate.id,
-      name: r.name.trim(),
-      email: r.email.trim().toLowerCase(),
-      type: r.type,
-      status: "invited",
-      email_sent: false,
-      company_id: candidate.company_id || null,
-      created_by: candidate.created_by || null,
-      token: uuidv4(),
-    }))
-  )
-  .select("id, type");
+ // ── Confirm & Save ───────────────────────────────────────
+async function confirmReferees() {
+  if (!candidate) return;
+  setConfirming(true);
 
-if (refErr) throw refErr;
-if (!insertedReferees || insertedReferees.length === 0) {
-  console.error("❌ No referees returned from Supabase insert.");
-  toast.error("Could not confirm referees — please try again.");
-  return;
-}
+  try {
+    // 0️⃣ Re-fetch the candidate from Supabase to make sure we have the correct template_id
+    const { data: freshCandidate, error: freshErr } = await supabase
+      .from("candidates")
+      .select("id, template_id, company_id, created_by")
+      .eq("id", candidate.id)
+      .maybeSingle();
 
-
-      // 2️⃣ Create reference_requests
-const requests = insertedReferees.map((r, i) => ({
-  candidate_id: candidate.id,
-  referee_id: r.id,
-  template_type: referees[i].type, // use local array type
-  status: "pending",
-}));
-
-
-
-      const { error: reqErr } = await supabase
-        .from("reference_requests")
-        .insert(requests);
-
-      if (reqErr) throw reqErr;
-
-      // 3️⃣ Audit log
-console.log("🧠 Attempting audit log insert:", {
-  action: "confirm_referees",
-  target_table: "candidates",
-  target_id: candidate.id,
-  candidate_id: candidate.id,
-  company_id: candidate.company_id,
-});
-
-const { data: auditData, error: auditErr } = await supabase
-  .from("audit_logs")
-  .insert({
-    action: "confirm_referees",
-    target_table: "candidates",
-    target_id: candidate.id,
-    candidate_id: candidate.id,
-    changes: {
-      referees_count: insertedReferees.length,
-      source: "add_referees_modal",
-    },
-  })
-
-  .select();
-
-if (auditErr) {
-  console.error("❌ Audit insert failed:", auditErr);
-} else {
-  console.log("✅ Audit insert succeeded:", auditData);
-}
-
-
-      toast.success("Referees confirmed! Emails will be sent shortly.");
-      router.replace("/thank-you");
-    } catch (err: any) {
-      console.error("❌ Error confirming referees:", err);
+    if (freshErr) {
+      console.error("❌ Could not refresh candidate before insert:", freshErr);
       toast.error("Something went wrong. Please try again.");
-    } finally {
       setConfirming(false);
-      setShowConfirmModal(false);
+      return;
     }
+
+    if (!freshCandidate) {
+      console.error("❌ No candidate found when confirming referees");
+      toast.error("Something went wrong. Please try again.");
+      setConfirming(false);
+      return;
+    }
+
+    console.log("🧩 Fresh candidate from DB:", freshCandidate);
+
+    const templateIdForInsert = freshCandidate.template_id || null;
+
+    // 1️⃣ Insert referees (now uses guaranteed template_id from DB)
+    const { data: insertedReferees, error: refErr } = await supabase
+      .from("referees")
+      .insert(
+        referees.map((r) => ({
+          candidate_id: candidate.id,
+          name: r.name.trim(),
+          email: r.email.trim().toLowerCase(),
+          type: r.type,
+          status: "invited",
+          email_sent: false,
+          company_id: freshCandidate.company_id || null,
+          created_by: freshCandidate.created_by || null,
+          token: uuidv4(),
+          template_id: templateIdForInsert, // ✅ always filled now
+        }))
+      )
+      .select("id, type");
+
+    if (refErr) throw refErr;
+    if (!insertedReferees || insertedReferees.length === 0) {
+      console.error("❌ No referees returned from Supabase insert.");
+      toast.error("Could not confirm referees — please try again.");
+      setConfirming(false);
+      return;
+    }
+
+    // 2️⃣ Create reference_requests rows
+    const requests = insertedReferees.map((r, i) => ({
+      candidate_id: candidate.id,
+      referee_id: r.id,
+      template_type: referees[i].type,
+      status: "pending",
+    }));
+
+    const { error: reqErr } = await supabase
+      .from("reference_requests")
+      .insert(requests);
+
+    if (reqErr) throw reqErr;
+
+    // 3️⃣ Audit log (safe, doesn't block user even if it fails)
+    console.log("🧠 Attempting audit log insert:", {
+      action: "confirm_referees",
+      target_table: "candidates",
+      target_id: candidate.id,
+      candidate_id: candidate.id,
+      company_id: freshCandidate.company_id,
+    });
+
+    const { data: auditData, error: auditErr } = await supabase
+      .from("audit_logs")
+      .insert({
+        action: "confirm_referees",
+        target_table: "candidates",
+        target_id: candidate.id,
+        candidate_id: candidate.id,
+        changes: {
+          referees_count: insertedReferees.length,
+          source: "add_referees_modal",
+        },
+      })
+      .select();
+
+    if (auditErr) {
+      console.error("❌ Audit insert failed:", auditErr);
+    } else {
+      console.log("✅ Audit insert succeeded:", auditData);
+    }
+
+    toast.success("Referees confirmed! Emails will be sent shortly.");
+    router.replace("/thank-you");
+  } catch (err: any) {
+    console.error("❌ Error confirming referees:", err);
+    toast.error("Something went wrong. Please try again.");
+  } finally {
+    setConfirming(false);
+    setShowConfirmModal(false);
   }
+}
+
 
   // ── Loading / Errors ─────────────────────────────────────
   if (loading) return <div className="p-8 text-center">Loading…</div>;

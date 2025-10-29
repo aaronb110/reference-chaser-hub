@@ -183,9 +183,17 @@ export default function DashboardPage() {
 
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [requests, setRequests] = useState<Request[]>([]);
-  const [templates, setTemplates] = useState<
-    { id: string; name: string; description?: string | null }[]
-  >([]);
+ const [templates, setTemplates] = useState<
+  {
+    id: string;
+    name: string;
+    description?: string | null;
+    category?: string | null;
+    required_refs?: number | null;
+    ref_types?: any;
+  }[]
+>([]);
+
 
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -236,27 +244,62 @@ export default function DashboardPage() {
     loadProfile();
   }, [router]);
 
-  // Load data
-  useEffect(() => {
-    if (!companyId) return;
-    async function loadData() {
-      const { data: cands } = await supabase
-        .from("candidate_dashboard_stats")
-        .select("*")
-        .eq("company_id", companyId)
-        .order("created_at", { ascending: false });
-      if (cands) setCandidates(cands as Candidate[]);
+  // load function that can be reused
+async function loadData() {
+  if (!companyId) return;
+  const { data: cands } = await supabase
+    .from("candidate_dashboard_stats")
+    .select("*")
+    .eq("company_id", companyId)
+    .order("created_at", { ascending: false });
+  if (cands) setCandidates(dedupe(cands as Candidate[]));
 
-      const { data: tmpls } = await supabase
-      .from("reference_templates")
-      .select("id, name, description, category, display_label")
-      .order("category", { ascending: true })
-      .order("display_label", { ascending: true });
 
-if (tmpls) setTemplates(tmpls);
-    }
-    loadData();
-  }, [companyId]);
+const { data: tmpls } = await supabase
+  .from("reference_templates")
+  .select("id, name, description, category, required_refs, ref_types");
+
+
+  if (tmpls) setTemplates(tmpls);
+}
+
+// initial load on mount
+useEffect(() => {
+  loadData();
+}, [companyId]);
+
+// ───────────────────────────────────────────────
+// Realtime dashboard updates when referees submit
+// ───────────────────────────────────────────────
+useEffect(() => {
+  // Only subscribe when we have a company ID loaded
+  if (!companyId) return;
+
+  const channel = supabase
+    .channel("referee-updates")
+    .on(
+      "postgres_changes",
+      {
+        event: "UPDATE",
+        schema: "public",
+        table: "referees",
+      },
+      (payload) => {
+        console.log("♻️ Referee status changed:", payload.new?.status);
+        // Re-fetch the dashboard stats
+        loadData();
+      }
+    )
+    .subscribe();
+
+  console.log("🔔 Subscribed to referee updates for realtime dashboard refresh");
+
+  return () => {
+    supabase.removeChannel(channel);
+    console.log("❌ Unsubscribed from referee updates");
+  };
+}, [companyId]);
+
 
   // Group templates by category for dropdown
 const templatesByCategory = useMemo(() => {
@@ -280,10 +323,10 @@ useEffect(() => {
     .on(
       'postgres_changes',
       { event: 'INSERT', schema: 'public', table: 'candidates', filter: `company_id=eq.${companyId}` },
-      (payload) => {
-        // Prepend the new candidate so it appears instantly
-        setCandidates((prev) => [payload.new as Candidate, ...prev]);
-      }
+    (payload) => {
+  setCandidates((prev) => dedupe([payload.new as Candidate, ...prev]));
+}
+
     )
     .subscribe();
 
@@ -328,60 +371,84 @@ useEffect(() => {
   };
 
   const handleAddCandidate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newCandidate.full_name || !newCandidate.email) return;
+  e.preventDefault();
+  if (!newCandidate.full_name || !newCandidate.email) return;
 
-    setAdding(true);
+  setAdding(true);
+
+  try {
+    // Generate consent token for this candidate
     const consentToken = nano();
 
-    try {
-      const cleaned = trimAll({
-        full_name: newCandidate.full_name,
-        email: newCandidate.email,
-        mobile: newCandidate.mobile,
-      });
+    // Clean inputs
+    const cleaned = trimAll({
+      full_name: newCandidate.full_name,
+      email: newCandidate.email,
+      mobile: newCandidate.mobile,
+    });
 
-      const candidatePayload = {
-        full_name: toTitleCaseName(cleaned.full_name),
-        email: normaliseEmail(cleaned.email),
-        mobile: cleaned.mobile ? ukToE164(cleaned.mobile) : null,
-        company_id: companyId,
-        created_by: userId,
-        consent_token: consentToken,
-        status: "awaiting_consent",
-        consent_status: "pending",
-        template_id: newCandidate.template_id || null,
-      };
+    // Prepare payload for DB
+    const candidatePayload = {
+      full_name: toTitleCaseName(cleaned.full_name),
+      email: normaliseEmail(cleaned.email),
+      mobile: cleaned.mobile ? ukToE164(cleaned.mobile) : null,
+      company_id: companyId,
+      created_by: userId,
+      consent_token: consentToken,
+      status: "awaiting_consent",
+      consent_status: "pending",
+      template_id: newCandidate.template_id || null,
+    };
 
-      const { data: inserted } = await supabase
-        .from("candidates")
-        .insert([candidatePayload])
-        .select()
-        .single();
+    // Insert and immediately get the real row back
+    const { data: inserted, error } = await supabase
+      .from("candidates")
+      .insert([candidatePayload])
+      .select("*") // get full row including real id
+      .single();
 
-      if (inserted) toast.success("Candidate added successfully");
-      setShowModal(false);
-      setNewCandidate({ full_name: "", email: "", mobile: "", template_id: "" });
-      // 🔄 Refresh candidate list after adding
-const { data: updated } = await supabase
-  .from("candidate_dashboard_stats")
-  .select("*")
-  .eq("company_id", companyId)
-  .order("created_at", { ascending: false });
-if (updated) setCandidates(updated as Candidate[]);
-
-    } catch (err) {
-      console.error(err);
-      toast.error("Error adding candidate");
-    } finally {
-      setAdding(false);
+    if (error) {
+      console.error("❌ Error inserting candidate:", error);
+      toast.error("Something went wrong adding the candidate");
+      return;
     }
-  };
+
+    if (!inserted) {
+      toast.error("No candidate returned from database");
+      return;
+    }
+
+    console.log("✅ Created candidate:", inserted.id, inserted.full_name);
+
+    // Example: build correct referee link
+    const refereeLink = `https://app.refevo.com/referee/${inserted.consent_token}`;
+
+    console.log("🔗 Referee link:", refereeLink);
+
+    // Optionally trigger your consent email here using inserted.id
+    // await sendConsentEmail(inserted.id);
+
+    toast.success("Candidate added successfully");
+    setShowModal(false);
+    setNewCandidate({ full_name: "", email: "", mobile: "", template_id: "" });
+  } catch (err) {
+    console.error("⚠️ Unexpected error:", err);
+    toast.error("Unexpected error while adding candidate");
+  } finally {
+    setAdding(false);
+  }
+};
+
 const [sortBy, setSortBy] = useState<
   "created_desc" | "created_asc" | "name_asc" | "name_desc"
 >("created_desc");
 
 const [currentPage, setCurrentPage] = useState(1);
+// 🔹 Ensure no duplicate candidates by ID
+function dedupe(list: Candidate[]) {
+  return Array.from(new Map(list.map((c) => [c.id, c])).values());
+}
+
 const pageSize = 10; // adjust per your preference
 
   const filteredCandidates = useMemo(() => {
@@ -683,7 +750,7 @@ const pageSize = 10; // adjust per your preference
                 <label className="block text-sm font-medium text-slate-700">
                   Reference Type
                 </label>
-                <select
+<select
   value={newCandidate.template_id || ""}
   onChange={(e) =>
     setNewCandidate({ ...newCandidate, template_id: e.target.value })
@@ -696,20 +763,45 @@ const pageSize = 10; // adjust per your preference
     <optgroup key={category} label={category}>
       {items.map((t: any) => (
         <option key={t.id} value={t.id}>
-          {t.display_label || t.name}
+          {t.name}
         </option>
       ))}
     </optgroup>
   ))}
 </select>
 
-<p className="text-xs text-slate-500 mt-1 min-h-[1rem]">
+<p className="text-sm text-slate-600 mt-2 italic transition-all"></p>
   {(() => {
-    const chosen = templates.find((t) => t.id === newCandidate.template_id);
-    if (!chosen) return "Select the type of reference you want to request.";
-    return chosen.description || "";
-  })()}
-</p>
+  const chosen = templates.find((t) => t.id === newCandidate.template_id);
+  if (!chosen) return null;
+
+  const total = chosen.required_refs || 0;
+
+  // 🧩 Remove duplicates in ref_types
+  const uniqueTypes = Array.isArray(chosen.ref_types)
+    ? Array.from(
+        new Set(
+          chosen.ref_types.map(
+            (t: any) => t.label || t.value || t.key || "reference"
+          )
+        )
+      )
+    : [];
+
+  const typeText =
+    uniqueTypes.length > 0 ? uniqueTypes.join(", ") : "reference(s)";
+
+  if (total) {
+    return (
+      <div className="text-xs text-slate-600 mt-2 bg-slate-50 p-2 rounded-lg border border-slate-100">
+        <strong>Requires:</strong> {total} × {typeText}
+      </div>
+    );
+  }
+
+  return null;
+})()}
+
 
               </div>
 

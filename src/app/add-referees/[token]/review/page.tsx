@@ -24,7 +24,11 @@ type CandidateLite = {
   full_name: string;
   consent_token: string;
   company_name?: string | null;
+  company_id?: string | null;
+  created_by?: string | null;
+  template_id?: string | null;
 };
+
 
 export default function ReviewRefereesPage() {
   const { token } = useParams<{ token: string }>();
@@ -53,11 +57,12 @@ export default function ReviewRefereesPage() {
     }
 
     // Fallback – fetch candidate directly if no session data found
-    const { data: c, error } = await supabase
-      .from("candidates")
-      .select("id, full_name, consent_token, company_name")
-      .eq("consent_token", token)
-      .maybeSingle();
+const { data: c, error } = await supabase
+  .from("candidates")
+  .select("id, full_name, consent_token, company_name, company_id, created_by, template_id")
+  .eq("consent_token", token)
+  .maybeSingle();
+
 
     if (error || !c) {
       console.warn("No candidate found:", error);
@@ -66,12 +71,16 @@ export default function ReviewRefereesPage() {
       return;
     }
 
-    setCandidate({
-      id: c.id,
-      full_name: c.full_name,
-      consent_token: c.consent_token,
-      company_name: c.company_name ?? null,
-    });
+setCandidate({
+  id: c.id,
+  full_name: c.full_name,
+  consent_token: c.consent_token,
+  company_name: c.company_name ?? null,
+  company_id: c.company_id ?? null,
+  created_by: c.created_by ?? null,
+  template_id: c.template_id ?? null,
+});
+
 
     setReferees([]); // optional: could fetch draft refs later
     setLoading(false);
@@ -90,20 +99,24 @@ export default function ReviewRefereesPage() {
     try {
       // 1) Insert finalised referees
       //    Assumes you already allow inserts for candidate-owned row via RLS
-      const finalReferees = referees.map(r => ({
-        candidate_id: candidate.id,
-        full_name: r.full_name.trim(),
-        email: r.email.trim().toLowerCase(),
-        relationship: r.relationship?.trim() || null,
-        type: r.type,
-        company: r.company?.trim() || null,
-        job_title: r.job_title?.trim() || null,
-        years_known: r.years_known ? Number(r.years_known) : null,
-        context_known: r.context_known?.trim() || null,
-        period_from: r.period_from || null,
-        period_to: r.period_to || null,
-        gap_reason: r.gap_reason?.trim() || null,
-      }));
+ const finalReferees = referees.map(r => ({
+  candidate_id: candidate.id,
+  full_name: r.full_name.trim(),
+  email: r.email.trim().toLowerCase(),
+  relationship: r.relationship?.trim() || null,
+  type: r.type,
+  company: r.company?.trim() || null,
+  job_title: r.job_title?.trim() || null,
+  years_known: r.years_known ? Number(r.years_known) : null,
+  context_known: r.context_known?.trim() || null,
+  period_from: r.period_from || null,
+  period_to: r.period_to || null,
+  gap_reason: r.gap_reason?.trim() || null,
+  company_id: candidate.company_id || null,       // ✅ added
+  created_by: candidate.created_by || null,       // ✅ added
+  template_id: candidate.template_id || null,     // ✅ added
+}));
+
 
       const { data: insertedReferees, error: refErr } = await supabase
         .from("referees")
