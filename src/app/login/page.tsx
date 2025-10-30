@@ -11,23 +11,46 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
+ const handleLogin = async (e: React.FormEvent) => {
+  e.preventDefault();
+  setLoading(true);
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
 
-    if (error) {
-      toast.error(error.message);
-    } else {
-      toast.success("Signed in!");
-      router.push("/dashboard");
-    }
+  if (error) {
+    toast.error(error.message);
     setLoading(false);
-  };
+    return;
+  }
+
+  toast.success("Signed in!");
+
+  // Fetch the user's role from profiles
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", data.user?.id)
+    .maybeSingle();
+
+  if (profileError || !profile?.role) {
+    router.push("/dashboard");
+    setLoading(false);
+    return;
+  }
+
+  const role = profile.role;
+
+  // Redirect based on role
+  if (role === "global_admin" || role === "admin") router.push("/admin");
+  else if (role === "company_admin") router.push("/company-admin");
+  else if (role === "manager") router.push("/manager");
+  else router.push("/dashboard");
+
+  setLoading(false);
+};
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100">
