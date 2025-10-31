@@ -2,6 +2,8 @@ import "./globals.css";
 import type { Metadata } from "next";
 import ClientRoot from "./ClientRoot";
 import { Toaster } from "react-hot-toast";
+import "./globals.css";
+
 
 export const metadata: Metadata = {
   title: "Refevo – Reference Hub",
