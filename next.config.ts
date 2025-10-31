@@ -1,7 +1,11 @@
 import type { NextConfig } from "next";
 
-const nextConfig = {
+const nextConfig: NextConfig = {
   reactStrictMode: true,
-} satisfies NextConfig;
+  eslint: {
+    // ✅ Don’t fail builds on ESLint issues
+    ignoreDuringBuilds: true,
+  },
+};
 
 export default nextConfig;

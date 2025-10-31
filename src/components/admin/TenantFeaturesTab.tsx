@@ -123,7 +123,7 @@ async function handleToggle(field: keyof TenantFeatures, value: boolean) {
   }
 
   // Optimistic UI update
-  let newFeatures = { ...features, [field]: value };
+  const newFeatures = { ...features, [field]: value };
   if (field === "enable_custom_templates" && value === false) {
     newFeatures.custom_template_limit = 0;
   }

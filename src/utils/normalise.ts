@@ -50,3 +50,20 @@ export const toTitleCaseName = (raw: string) => {
     })
     .join(" ");
 };
+
+// Converts a UK number to +44 E.164 format (basic version)
+export function ukToE164(raw: string): string {
+  if (!raw) return "";
+  let digits = raw.replace(/[^\d]/g, "");
+
+  // Remove leading 00
+  if (digits.startsWith("00")) digits = digits.slice(2);
+
+  // Replace leading 0 with +44
+  if (digits.startsWith("0")) digits = `44${digits.slice(1)}`;
+
+  // Add + if missing
+  if (!digits.startsWith("44")) digits = `44${digits}`;
+
+  return `+${digits}`;
+}
