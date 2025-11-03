@@ -23,9 +23,14 @@ export function RoleProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<Role | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // ✅ Load role once when session changes
   useEffect(() => {
-    async function loadRole() {
-      const { data: { session } } = await supabase.auth.getSession();
+    let ignore = false;
+
+    async function fetchRole() {
+      const { data } = await supabase.auth.getSession();
+      const session = data.session;
+
       if (!session) {
         setRole("user");
         setLoading(false);
@@ -38,19 +43,30 @@ export function RoleProvider({ children }: { children: ReactNode }) {
         .eq("id", session.user.id)
         .maybeSingle();
 
-      const fakeRole = window.localStorage.getItem("tempRole");
-      setRole((fakeRole as Role) || (profile?.role as Role) || "user");
-      setLoading(false);
+      if (!ignore) {
+        const stored = localStorage.getItem("tempRole");
+        setRole((stored as Role) || (profile?.role as Role) || "user");
+        setLoading(false);
+      }
     }
 
-    loadRole();
+    // 🔄 Subscribe once to auth changes
+    const { data: listener } = supabase.auth.onAuthStateChange(() => {
+      fetchRole();
+    });
+
+    // Run immediately
+    fetchRole();
+
+    return () => {
+      ignore = true;
+      listener.subscription.unsubscribe();
+    };
   }, []);
 
-  // When role changes (via switcher), persist to localStorage for page reloads
+  // ✅ Store role changes safely
   useEffect(() => {
-    if (role) {
-      window.localStorage.setItem("tempRole", role);
-    }
+    if (role) localStorage.setItem("tempRole", role);
   }, [role]);
 
   return (

@@ -12,6 +12,9 @@ type TenantFeatures = {
   custom_templates_billing_type: string;
 };
 
+
+
+
 // ─────────────────────────────────────────────
 //  Local confirmation modal (disable credits)
 // ─────────────────────────────────────────────
@@ -55,15 +58,28 @@ function ConfirmModal({
     </div>
   );
 }
+// Temporary line for debugging
+// @ts-ignore
+window.supabase = supabase;
 
-
+// ─────────────────────────────────────────────
+//  Main Component
+// ─────────────────────────────────────────────
 export default function TenantFeaturesTab({ tenantId }: { tenantId: string }) {
   const [features, setFeatures] = useState<TenantFeatures | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
+  useEffect(() => {
+  async function checkSession() {
+    const { data } = await supabase.auth.getSession();
+    console.log("🔍 Current session metadata:", data.session?.user?.user_metadata);
+  }
+  checkSession();
+}, []);
 
+  // ─── Load current feature states ─────────────────────────────
   async function loadFeatures() {
     setLoading(true);
     const { data, error } = await supabase
@@ -83,56 +99,85 @@ export default function TenantFeaturesTab({ tenantId }: { tenantId: string }) {
     setLoading(false);
   }
 
-  useEffect(() => {
-    if (tenantId) loadFeatures();
-  }, [tenantId]);
-  
+console.log("Tenant ID being loaded:", tenantId);
+
+
+useEffect(() => {
+  if (!tenantId) return;
+  let mounted = true;
+
+  (async () => {
+    if (mounted) await loadFeatures();
+  })();
+
+  return () => {
+    mounted = false;
+  };
+  // ⚠️ Empty dependency array prevents repeated calls
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, []);
+
+
   // ─── Central update helper ─────────────────────────────
-async function updateFeature(field: keyof TenantFeatures, value: boolean) {
-  if (!features) return;
-  setSaving(true);
+  async function updateFeature(field: keyof TenantFeatures, value: boolean) {
+    if (!features) return false;
+    setSaving(true);
 
-  const updatePayload: Partial<TenantFeatures> = { [field]: value };
-  if (field === "enable_custom_templates" && value === false) {
-    updatePayload.custom_template_limit = 0;
-  }
+    const updatePayload: Partial<TenantFeatures> = { [field]: value };
+    if (field === "enable_custom_templates" && value === false) {
+      updatePayload.custom_template_limit = 0;
+    }
 
-  const { error } = await supabase
-    .from("companies")
-    .update(updatePayload)
-    .eq("id", tenantId);
+    console.log("Updating:", field, value, updatePayload);
 
-  if (error) {
-    console.error(error);
-    toast.error("Failed to update feature");
-  } else {
+    const { data, error } = await supabase
+      .from("companies")
+      .update(updatePayload)
+      .eq("id", tenantId)
+      .select(
+        "enable_credits, enable_custom_templates, custom_template_limit, enable_user_management, custom_templates_billing_type"
+      )
+      .single();
+
+      console.log("🧩 Update payload:", updatePayload);
+console.log("🧩 Tenant ID:", tenantId);
+console.log("🧩 Update result:", { data, error });
+
+
+    setSaving(false);
+
+    if (error) {
+      console.error(error);
+      toast.error("Failed to update feature");
+      return false;
+    }
+
     toast.success("Feature updated");
-    setFeatures({ ...features, ...updatePayload });
-  }
-  setSaving(false);
-}
-
-// ─── Toggle handler (lightweight) ─────────────────────────────
-async function handleToggle(field: keyof TenantFeatures, value: boolean) {
-  if (!features) return;
-
-  // Special case: disabling credits triggers confirmation modal
-  if (field === "enable_credits" && value === false) {
-    setShowConfirm(true);
-    return;
+    setFeatures(data);
+    return true;
   }
 
-  // Optimistic UI update
-  const newFeatures = { ...features, [field]: value };
-  if (field === "enable_custom_templates" && value === false) {
-    newFeatures.custom_template_limit = 0;
+  // ─── Toggle handler ─────────────────────────────
+  async function handleToggle(field: keyof TenantFeatures, value: boolean) {
+    if (!features) return;
+
+    if (field === "enable_credits" && value === false) {
+      setShowConfirm(true);
+      return;
+    }
+
+    const previous = features;
+    const newFeatures = { ...features, [field]: value };
+    if (field === "enable_custom_templates" && value === false) {
+      newFeatures.custom_template_limit = 0;
+    }
+
+    setFeatures(newFeatures);
+    const success = await updateFeature(field, value);
+    if (!success) setFeatures(previous);
   }
 
-  setFeatures(newFeatures);
-  await updateFeature(field, value);
-}
-
-
+  // ─── Template limit handler ─────────────────────────────
   async function handleLimitChange(newValue: number) {
     if (!features) return;
     setFeatures({ ...features, custom_template_limit: newValue });
@@ -186,14 +231,16 @@ async function handleToggle(field: keyof TenantFeatures, value: boolean) {
           disabled={disableLimit}
           value={features.custom_template_limit ?? 0}
           onChange={(e) => handleLimitChange(parseInt(e.target.value, 10))}
-          className={`w-24 rounded-md border px-2 py-1 text-sm focus:ring-2 focus:ring-teal-500 ${disableLimit
+          className={`w-24 rounded-md border px-2 py-1 text-sm focus:ring-2 focus:ring-teal-500 ${
+            disableLimit
               ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
               : "border-slate-300 text-slate-700"
-            }`}
+          }`}
         />
         <p
-          className={`text-xs mt-1 ${disableLimit ? "text-slate-400 italic" : "text-slate-500"
-            }`}
+          className={`text-xs mt-1 ${
+            disableLimit ? "text-slate-400 italic" : "text-slate-500"
+          }`}
         >
           {disableLimit
             ? "Disabled while Custom Templates are off."
@@ -205,20 +252,23 @@ async function handleToggle(field: keyof TenantFeatures, value: boolean) {
         <p className="text-xs text-slate-400 italic">Saving changes…</p>
       )}
 
-  <ConfirmModal
-  open={showConfirm}
-  onCancel={() => setShowConfirm(false)}
-  onConfirm={async () => {
-    setShowConfirm(false);
-    await updateFeature("enable_credits", false); // direct call, no recursion
-  }}
-/>
-
-    </div> // ← this closes the <div className="space-y-5">
-
+      <ConfirmModal
+        open={showConfirm}
+        onCancel={() => setShowConfirm(false)}
+        onConfirm={async () => {
+          setShowConfirm(false);
+          await updateFeature("enable_credits", false);
+        }}
+      />
+    </div>
   );
 }
 
+console.count("🌀 TenantFeaturesTab mounted");
+
+// ─────────────────────────────────────────────
+//  Simple Toggle Component
+// ─────────────────────────────────────────────
 function ToggleRow({
   label,
   value,
@@ -233,12 +283,14 @@ function ToggleRow({
       <span className="text-sm text-slate-700">{label}</span>
       <button
         onClick={() => onChange(!value)}
-        className={`relative inline-flex h-5 w-9 items-center rounded-full transition ${value ? "bg-teal-600" : "bg-slate-300"
-          }`}
+        className={`relative inline-flex h-5 w-9 items-center rounded-full transition ${
+          value ? "bg-teal-600" : "bg-slate-300"
+        }`}
       >
         <span
-          className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${value ? "translate-x-5" : "translate-x-1"
-            }`}
+          className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
+            value ? "translate-x-5" : "translate-x-1"
+          }`}
         />
       </button>
     </div>
