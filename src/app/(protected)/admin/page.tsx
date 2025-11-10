@@ -7,7 +7,7 @@ import { saveAs } from "file-saver";
 import TenantsTab from "@/components/admin/TenantsTab";
 import PlansTab from "@/components/admin/PlansTab";
 import PlanCatalogTab from "@/components/admin/PlanCatalogTab";
-
+import UsersTab from "@/components/admin/UsersTab";
 
 
 
@@ -25,15 +25,19 @@ type ActivityRow = {
 };
 
 export default function AdminDashboardPage() {
+
+  console.log("🧩 AdminDashboardPage rendering");
+
   const { loading } = useRoleGuard(["global_admin"]);
   // ─── Tab Config ───────────────────────────────────────────────
-  const tabs = [
-    { key: "overview", label: "Overview" },
-    { key: "tenants", label: "Tenants" },
-    { key: "plans", label: "Plans" },            // Company-level plan assignment
-    { key: "plan_catalog", label: "Plan Catalog" },  // Global plan pricing & features
-    { key: "audit", label: "Audit Log" },
-  ] as const;
+const tabs = [
+  { key: "overview", label: "Overview" },
+  { key: "tenants", label: "Tenants" },
+  { key: "users", label: "Users" },          // ✅ new
+  { key: "plan_catalog", label: "Plan Catalog" },
+  { key: "audit", label: "Audit Log" },
+] as const;
+
 
 
   type TabKey = (typeof tabs)[number]["key"];
@@ -69,18 +73,21 @@ export default function AdminDashboardPage() {
 
 
 
-  {activeTab === "overview" ? (
+ {activeTab === "overview" ? (
   <OverviewTab onViewFullLog={() => setActiveTab("audit")} />
 ) : activeTab === "tenants" ? (
   <TenantsTab />
-) : activeTab === "plans" ? (
-  <PlansTab />
+) : activeTab === "users" ? (
+  <UsersTab />              // ✅ new
 ) : activeTab === "plan_catalog" ? (
   <PlanCatalogTab />
 ) : (
   <AuditTab />
-)}
+)} 
 
+
+{/* Temporary debug to check JWT metadata */}
+{process.env.NODE_ENV === "development" && <DebugJWT />}
 
 
     </div>
@@ -323,6 +330,9 @@ function AuditTab() {
     from: "",
     to: "",
   });
+
+
+
 
   // ─── Load Logs ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -619,6 +629,20 @@ function AuditTab() {
           </div>
         </div>
       )}
+
+
     </div>
   );
+}
+
+function DebugJWT() {
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      console.log("🧩 Session user:", data.session?.user);
+      console.log("🧩 Metadata:", data.session?.user?.user_metadata);
+      console.log("🧩 App metadata:", data.session?.user?.app_metadata);
+    });
+  }, []);
+
+  return null;
 }

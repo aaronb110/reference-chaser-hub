@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import toast from "react-hot-toast";
 import TenantFeaturesTab from "@/components/admin/TenantFeaturesTab";
+import { useUserRole } from "@/hooks/useUserRole";
+
 
 
 type TenantRow = {
@@ -66,6 +68,8 @@ export default function TenantsTab() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({ name: "", status: "active" });
+  const { role } = useUserRole();
+
 
   const [filters, setFilters] = useState({
     search: "",
@@ -555,26 +559,30 @@ let query = supabase
             </div>
 
             {/* Tabs bar */}
-            <div className="flex border-b border-slate-200 mb-4 text-sm font-medium">
-              {[
-                { key: "details", label: "Details" },
-                { key: "templates", label: "Templates" },
-                { key: "billing", label: "Billing" },
-                { key: "users", label: "Users" },
-                { key: "features", label: "Features" },
-              ].map((tab) => (
-                <button
-                  key={tab.key}
-                  onClick={() => setActiveTenantTab(tab.key as typeof activeTenantTab)}
-                  className={`px-4 py-2 -mb-px border-b-2 transition-colors ${activeTenantTab === tab.key
-                    ? "border-teal-500 text-teal-600"
-                    : "border-transparent text-slate-500 hover:text-slate-700"
-                    }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
+         <div className="flex border-b border-slate-200 mb-4 text-sm font-medium">
+  {[
+    { key: "details", label: "Details" },
+    { key: "templates", label: "Templates" },
+    { key: "billing", label: "Billing" },
+    { key: "users", label: "Users" },
+    // Only show "Features" tab if role === global_admin
+    ...(role === "global_admin" ? [{ key: "features", label: "Features" }] : []),
+  ].map((tab) => (
+    <button
+      key={tab.key}
+      onClick={() => setActiveTenantTab(tab.key as typeof activeTenantTab)}
+      className={`px-4 py-2 -mb-px border-b-2 transition-colors ${
+        activeTenantTab === tab.key
+          ? "border-teal-500 text-teal-600"
+          : "border-transparent text-slate-500 hover:text-slate-700"
+      }`}
+    >
+      {tab.label}
+    </button>
+  ))}
+</div>
+
+
 
             {/* Tab content area */}
             <div className="space-y-4 text-sm">
@@ -692,14 +700,12 @@ let query = supabase
                 </div>
               )}
 
-                           {activeTenantTab === "features" && (
-                <div>
-                  {activeTenantTab === "features" && (
-  <TenantFeaturesTab tenantId={selectedTenant.id} />
+          {role === "global_admin" && activeTenantTab === "features" && (
+  <div>
+    <TenantFeaturesTab tenantId={selectedTenant.id} />
+  </div>
 )}
 
-                </div>
-              )}
             </div> 
           </div> 
         </div> 

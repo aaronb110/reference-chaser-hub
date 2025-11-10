@@ -72,227 +72,229 @@ export default function TenantFeaturesTab({ tenantId }: { tenantId: string }) {
   const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => {
-  async function checkSession() {
-    const { data } = await supabase.auth.getSession();
-    console.log("🔍 Current session metadata:", data.session?.user?.user_metadata);
-  }
-  checkSession();
-}, []);
+    async function checkSession() {
+      const { data } = await supabase.auth.getSession();
+      console.log("🔍 Current session metadata:", data.session?.user?.user_metadata);
+    }
+    checkSession();
+  }, []);
 
   // ─── Load current feature states ─────────────────────────────
   async function loadFeatures() {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from("companies")
-      .select(
-        "enable_credits, enable_custom_templates, custom_template_limit, enable_user_management, custom_templates_billing_type"
-      )
-      .eq("id", tenantId)
-      .single();
+  setLoading(true);
 
-    if (error) {
-      console.error(error);
-      toast.error("Failed to load feature flags");
-    } else {
-      setFeatures(data);
-    }
-    setLoading(false);
-  }
+  const { data, error } = await supabase
+    .from("companies")
+    .select(
+      "enable_credits, enable_custom_templates, custom_template_limit, enable_user_management, custom_templates_billing_type"
+    )
+    .eq("id", tenantId)
+    .single();
 
-console.log("Tenant ID being loaded:", tenantId);
-
-
-useEffect(() => {
-  if (!tenantId) return;
-  let mounted = true;
-
-  (async () => {
-    if (mounted) await loadFeatures();
-  })();
-
-  return () => {
-    mounted = false;
-  };
-  // ⚠️ Empty dependency array prevents repeated calls
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, []);
-
-
-  // ─── Central update helper ─────────────────────────────
-  async function updateFeature(field: keyof TenantFeatures, value: boolean) {
-    if (!features) return false;
-    setSaving(true);
-
-    const updatePayload: Partial<TenantFeatures> = { [field]: value };
-    if (field === "enable_custom_templates" && value === false) {
-      updatePayload.custom_template_limit = 0;
-    }
-
-    console.log("Updating:", field, value, updatePayload);
-
-    const { data, error } = await supabase
-      .from("companies")
-      .update(updatePayload)
-      .eq("id", tenantId)
-      .select(
-        "enable_credits, enable_custom_templates, custom_template_limit, enable_user_management, custom_templates_billing_type"
-      )
-      .single();
-
-      console.log("🧩 Update payload:", updatePayload);
-console.log("🧩 Tenant ID:", tenantId);
-console.log("🧩 Update result:", { data, error });
-
-
-    setSaving(false);
-
-    if (error) {
-      console.error(error);
-      toast.error("Failed to update feature");
-      return false;
-    }
-
-    toast.success("Feature updated");
+  if (error) {
+    console.error(error);
+    toast.error("Failed to load feature flags");
+  } else {
     setFeatures(data);
-    return true;
   }
 
-  // ─── Toggle handler ─────────────────────────────
-  async function handleToggle(field: keyof TenantFeatures, value: boolean) {
-    if (!features) return;
+  setLoading(false);
+}
 
-    if (field === "enable_credits" && value === false) {
-      setShowConfirm(true);
-      return;
-    }
 
-    const previous = features;
-    const newFeatures = { ...features, [field]: value };
-    if (field === "enable_custom_templates" && value === false) {
-      newFeatures.custom_template_limit = 0;
-    }
+  console.log("Tenant ID being loaded:", tenantId);
 
-    setFeatures(newFeatures);
-    const success = await updateFeature(field, value);
-    if (!success) setFeatures(previous);
+
+  useEffect(() => {
+    if (!tenantId) return;
+    let mounted = true;
+
+    (async () => {
+      if (mounted) await loadFeatures();
+    })();
+
+    return () => {
+      mounted = false;
+    };
+    // ⚠️ Empty dependency array prevents repeated calls
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+
+  async function updateFeature(field: keyof TenantFeatures, value: boolean) {
+  if (!features) return false;
+  setSaving(true);
+
+  console.log("🧩 Updating via RPC:", { field, value, tenantId });
+
+  const { data, error } = await supabase.rpc("update_company_feature", {
+    in_company_id: tenantId,
+    in_field: field,
+    in_value: value,
+  });
+
+  setSaving(false);
+
+  if (error) {
+    console.error("❌ Update error:", error);
+    toast.error("Failed to update feature");
+    return false;
   }
 
-  // ─── Template limit handler ─────────────────────────────
-  async function handleLimitChange(newValue: number) {
-    if (!features) return;
-    setFeatures({ ...features, custom_template_limit: newValue });
+  console.log("✅ RPC response:", data);
 
-    const { error } = await supabase
-      .from("companies")
-      .update({ custom_template_limit: newValue })
-      .eq("id", tenantId);
+  // ✅ Update local state after success
+  setFeatures((prev) => {
+    if (!prev) return prev;
+    return {
+      ...prev,
+      [field]: value,
+    };
+  });
 
-    if (error) {
-      toast.error("Failed to update limit");
-    } else {
-      toast.success("Template limit updated");
+  return true;
+}
+ 
+
+
+
+
+    // ─── Toggle handler ─────────────────────────────
+
+    async function handleToggle(field: keyof TenantFeatures, value: boolean) {
+      if (!features) return;
+
+      if (field === "enable_credits" && value === false) {
+        setShowConfirm(true);
+        return;
+      }
+
+      const previous = features;
+      const newFeatures = { ...features, [field]: value };
+      if (field === "enable_custom_templates" && value === false) {
+        newFeatures.custom_template_limit = 0;
+      }
+
+      setFeatures(newFeatures);
+
+      // ✅ Wait for RPC success; revert if failed
+      const success = await updateFeature(field, value);
+      if (!success) setFeatures(previous);
     }
-  }
 
-  if (loading) return <p className="text-slate-500 italic">Loading features…</p>;
-  if (!features) return <p className="text-slate-500 italic">No data found.</p>;
 
-  const disableLimit = !features.enable_custom_templates;
+    // ─── Template limit handler ─────────────────────────────
+    async function handleLimitChange(newValue: number) {
+      if (!features) return;
+      setFeatures({ ...features, custom_template_limit: newValue });
 
-  return (
-    <div className="space-y-5">
-      <h4 className="text-base font-semibold text-slate-900">Feature Toggles</h4>
+      const { error } = await supabase
+        .from("companies")
+        .update({ custom_template_limit: newValue })
+        .eq("id", tenantId);
 
-      <ToggleRow
-        label="Credits Module"
-        value={features.enable_credits}
-        onChange={(v) => handleToggle("enable_credits", v)}
-      />
+      if (error) {
+        toast.error("Failed to update limit");
+      } else {
+        toast.success("Template limit updated");
+      }
+    }
 
-      <ToggleRow
-        label="Custom Templates"
-        value={features.enable_custom_templates}
-        onChange={(v) => handleToggle("enable_custom_templates", v)}
-      />
+    if (loading) return <p className="text-slate-500 italic">Loading features…</p>;
+    if (!features) return <p className="text-slate-500 italic">No data found.</p>;
 
-      <ToggleRow
-        label="User Management"
-        value={features.enable_user_management}
-        onChange={(v) => handleToggle("enable_user_management", v)}
-      />
+    const disableLimit = !features.enable_custom_templates;
 
-      <div className="mt-6 border-t border-slate-200 pt-4">
-        <label className="block text-sm font-medium text-slate-700 mb-1">
-          Custom Template Limit
-        </label>
-        <input
-          type="number"
-          min={0}
-          disabled={disableLimit}
-          value={features.custom_template_limit ?? 0}
-          onChange={(e) => handleLimitChange(parseInt(e.target.value, 10))}
-          className={`w-24 rounded-md border px-2 py-1 text-sm focus:ring-2 focus:ring-teal-500 ${
-            disableLimit
+    return (
+      <div className="space-y-5">
+        <h4 className="text-base font-semibold text-slate-900">Feature Toggles</h4>
+
+        <ToggleRow
+          label="Credits Module"
+          value={features.enable_credits}
+          onChange={(v) => handleToggle("enable_credits", v)}
+        />
+
+        <ToggleRow
+          label="Custom Templates"
+          value={features.enable_custom_templates}
+          onChange={(v) => handleToggle("enable_custom_templates", v)}
+        />
+
+        <ToggleRow
+          label="User Management"
+          value={features.enable_user_management}
+          onChange={(v) => handleToggle("enable_user_management", v)}
+        />
+
+        <div className="mt-6 border-t border-slate-200 pt-4">
+          <label className="block text-sm font-medium text-slate-700 mb-1">
+            Custom Template Limit
+          </label>
+          <input
+            type="number"
+            min={0}
+            disabled={disableLimit}
+            value={features.custom_template_limit ?? 0}
+            onChange={(e) => handleLimitChange(parseInt(e.target.value, 10))}
+            className={`w-24 rounded-md border px-2 py-1 text-sm focus:ring-2 focus:ring-teal-500 ${disableLimit
               ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
               : "border-slate-300 text-slate-700"
-          }`}
+              }`}
+          />
+          <p
+            className={`text-xs mt-1 ${disableLimit ? "text-slate-400 italic" : "text-slate-500"
+              }`}
+          >
+            {disableLimit
+              ? "Disabled while Custom Templates are off."
+              : `Current billing type: ${features.custom_templates_billing_type}`}
+          </p>
+        </div>
+
+        {saving && (
+          <p className="text-xs text-slate-400 italic">Saving changes…</p>
+        )}
+
+        <ConfirmModal
+          open={showConfirm}
+          onCancel={() => setShowConfirm(false)}
+          onConfirm={async () => {
+            setShowConfirm(false);
+            await updateFeature("enable_credits", false);
+          }}
         />
-        <p
-          className={`text-xs mt-1 ${
-            disableLimit ? "text-slate-400 italic" : "text-slate-500"
-          }`}
-        >
-          {disableLimit
-            ? "Disabled while Custom Templates are off."
-            : `Current billing type: ${features.custom_templates_billing_type}`}
-        </p>
       </div>
+    );
+  }
 
-      {saving && (
-        <p className="text-xs text-slate-400 italic">Saving changes…</p>
-      )}
+  console.count("🌀 TenantFeaturesTab mounted");
 
-      <ConfirmModal
-        open={showConfirm}
-        onCancel={() => setShowConfirm(false)}
-        onConfirm={async () => {
-          setShowConfirm(false);
-          await updateFeature("enable_credits", false);
-        }}
-      />
-    </div>
-  );
-}
-
-console.count("🌀 TenantFeaturesTab mounted");
-
-// ─────────────────────────────────────────────
-//  Simple Toggle Component
-// ─────────────────────────────────────────────
-function ToggleRow({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <div className="flex items-center justify-between border border-slate-200 rounded-lg px-4 py-2 bg-slate-50">
-      <span className="text-sm text-slate-700">{label}</span>
-      <button
-        onClick={() => onChange(!value)}
-        className={`relative inline-flex h-5 w-9 items-center rounded-full transition ${
-          value ? "bg-teal-600" : "bg-slate-300"
-        }`}
-      >
-        <span
-          className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
-            value ? "translate-x-5" : "translate-x-1"
-          }`}
-        />
-      </button>
-    </div>
-  );
-}
+  // ─────────────────────────────────────────────
+  //  Simple Toggle Component
+  // ─────────────────────────────────────────────
+  function ToggleRow({
+    label,
+    value,
+    onChange,
+  }: {
+    label: string;
+    value: boolean;
+    onChange: (v: boolean) => void;
+  }) {
+    return (
+      <div className="flex items-center justify-between border border-slate-200 rounded-lg px-4 py-2 bg-slate-50">
+        <span className="text-sm text-slate-700">{label}</span>
+        <button
+          onClick={() => onChange(!value)}
+          className={`relative inline-flex h-5 w-9 items-center rounded-full transition ${value ? "bg-teal-600" : "bg-slate-300"
+            }`}
+        >
+          <span
+            className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${value ? "translate-x-5" : "translate-x-1"
+              }`}
+          />
+        </button>
+      </div>
+    );
+  }

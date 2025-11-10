@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
 export type Role =
@@ -13,7 +13,6 @@ export type Role =
 
 type RoleContextType = {
   role: Role | null;
-  setRole: (r: Role) => void;
   loading: boolean;
 };
 
@@ -23,61 +22,64 @@ export function RoleProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<Role | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // ✅ Load role once when session changes
   useEffect(() => {
-    let ignore = false;
+    let isMounted = true;
 
     async function fetchRole() {
-      const { data } = await supabase.auth.getSession();
-      const session = data.session;
+      console.log("🧩 [RoleContext] Fetching role (reset version) …");
+      const { data, error } = await supabase.auth.getSession();
 
-      if (!session) {
-        setRole("user");
-        setLoading(false);
+      if (error) {
+        console.error("🔴 [RoleContext] Session error:", error);
+        if (isMounted) setLoading(false);
         return;
       }
 
-      const { data: profile } = await supabase
+      const session = data.session;
+      if (!session) {
+        console.log("🟠 No session → default to user");
+        if (isMounted) {
+          setRole("user");
+          setLoading(false);
+        }
+        return;
+      }
+
+      // Try to read profile; if fails, default to "user"
+      const { data: profile, error: profileError } = await supabase
         .from("profiles")
         .select("role")
-        .eq("id", session.user.id)
+        .eq("user_id", session.user.id)
         .maybeSingle();
 
-      if (!ignore) {
-        const stored = localStorage.getItem("tempRole");
-        setRole((stored as Role) || (profile?.role as Role) || "user");
+      if (profileError) {
+        console.warn("⚠️ Profile error, defaulting to user:", profileError.message);
+      }
+
+      const resolved = (profile?.role as Role) || "user";
+      console.log("✅ Resolved role:", resolved);
+      if (isMounted) {
+        setRole(resolved);
         setLoading(false);
       }
     }
 
-    // 🔄 Subscribe once to auth changes
-    const { data: listener } = supabase.auth.onAuthStateChange(() => {
-      fetchRole();
-    });
-
-    // Run immediately
     fetchRole();
 
     return () => {
-      ignore = true;
-      listener.subscription.unsubscribe();
+      isMounted = false;
     };
   }, []);
 
-  // ✅ Store role changes safely
-  useEffect(() => {
-    if (role) localStorage.setItem("tempRole", role);
-  }, [role]);
-
   return (
-    <RoleContext.Provider value={{ role, setRole, loading }}>
+    <RoleContext.Provider value={{ role, loading }}>
       {children}
     </RoleContext.Provider>
   );
 }
 
 export function useRole() {
-  const context = useContext(RoleContext);
-  if (!context) throw new Error("useRole must be used inside RoleProvider");
-  return context;
+  const ctx = useContext(RoleContext);
+  if (!ctx) throw new Error("useRole must be used inside RoleProvider");
+  return ctx;
 }

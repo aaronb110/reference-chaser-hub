@@ -38,14 +38,18 @@ export function useUserRole() {
     let mounted = true;
 
     async function load() {
+      console.log("🧩 [useUserRole] Starting role load...");
       try {
         const {
           data: { session },
           error: sErr,
         } = await supabase.auth.getSession();
+
         if (sErr) throw sErr;
+        console.log("🧩 [useUserRole] Session:", session?.user?.email);
 
         if (!session) {
+          console.log("🧩 [useUserRole] No session found");
           if (mounted) {
             setState((s) => ({
               ...s,
@@ -60,24 +64,27 @@ export function useUserRole() {
         }
 
         const user = session.user;
+        console.log("🧩 [useUserRole] Loading profile for user_id:", user.id);
 
-        // Read DB profile
         const { data: profile, error: pErr } = await supabase
           .from("profiles")
           .select("role, company_id")
-          .eq("id", user.id)
+          .eq("user_id", user.id)
           .maybeSingle();
 
         if (pErr) throw pErr;
 
-        // Dev override (TempRoleSwitcher)
-        const fakeRole = (typeof window !== "undefined" &&
-          window.localStorage.getItem("tempRole")) as Role | null;
+        console.log("🧩 [useUserRole] Profile data:", profile);
+
+        const fakeRole =
+          typeof window !== "undefined"
+            ? (window.localStorage.getItem("tempRole") as Role | null)
+            : null;
 
         const finalRole =
-          fakeRole ||
-          (profile?.role as Role | null) ||
-          ("user" as Role); // safest fallback
+          fakeRole || (profile?.role as Role | null) || "user";
+
+        console.log("🧩 [useUserRole] Final resolved role:", finalRole);
 
         if (mounted) {
           setState({
@@ -91,6 +98,7 @@ export function useUserRole() {
           });
         }
       } catch (e: any) {
+        console.error("❌ [useUserRole] Error:", e);
         if (mounted) {
           setState((s) => ({
             ...s,
@@ -103,8 +111,8 @@ export function useUserRole() {
 
     load();
 
-    // Keep in sync if auth changes on this tab
     const { data: sub } = supabase.auth.onAuthStateChange(() => {
+      console.log("🌀 [useUserRole] Auth state change detected — reloading");
       load();
     });
 
